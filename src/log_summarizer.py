@@ -1,7 +1,36 @@
 import re
 import subprocess
+import requests
 from collections import deque
 from src.prompts import ERROR_SUMMARIZATION_PROMPT
+
+
+def download_url_to_log(url, log_file_path):
+    """
+    Downloads the content from a given URL and writes it to a log file.
+
+    Args:
+        url (str): The URL to download content from.
+        log_file_path (str): The path to the log file.
+    """
+    output_dir = "/tmp"
+    log_file_path = output_dir + log_file_path
+ 
+    print(f"Creating a file {log_file_path}")
+    try:
+        response = requests.get(url, stream=True, verify=False)
+        response.raise_for_status()
+        
+        with open(log_file_path, 'wb') as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                file.write(chunk)
+        print(f"Successfully downloaded content from {url} to {log_file_path}")
+    
+    except requests.exceptions.RequestException as e:
+         print(f"Error downloading from {url}: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    return output_dir
 
 
 def download_prow_logs(url, output_dir="/tmp/"):
