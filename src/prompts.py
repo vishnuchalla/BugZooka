@@ -5,6 +5,17 @@ ERROR_SUMMARIZATION_PROMPT = {
     "assistant": "Sure! Here are the most relevant logs:"
 }
 
+ERROR_FILTER_PROMPT = {
+    "system": "You are an AI assistant specializing in analyzing logs to detect failures.",
+    "user": "I have scanned log files and found potential error logs. Here is the list:\n\n{error_list}\n\n"
+            "Analyze these errors and return only the **top 5 most critical errors** based on severity, frequency, and impact. "
+            "Ensure that your response contains a **diverse set of failures** rather than redundant occurrences of the same error.\n"
+            "Respond **only** with a valid JSON list containing exactly 5 error messages, without any additional explanation.\n"
+            "Example response format:\n"
+            "[\"Error 1 description\", \"Error 2 description\", \"Error 3 description\", \"Error 4 description\", \"Error 5 description\"]",
+    "assistant": "[]"
+}
+
 OPENSHIFT_PROMPT = {
     "system": "You are an expert in OpenShift, Kubernetes, and cloud infrastructure. "
               "Your task is to analyze logs and summaries related to OpenShift environments. "

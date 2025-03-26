@@ -1,5 +1,6 @@
 import re
 import subprocess
+from collections import deque
 from src.prompts import ERROR_SUMMARIZATION_PROMPT
 
 
@@ -36,28 +37,38 @@ def download_prow_logs(url, output_dir="/tmp/"):
         print(f"Error downloading logs: {e}")
     return output_dir + build_id
 
-def search_errors_in_file(file_path):
+def search_errors_in_file(file_path, context_lines=3):
     """
-    Opens a log file and searches for error terms.
+    Opens a log file and searches for error terms while capturing context.
     
     Args:
         file_path (str): The path of the log file to search for errors.
+        context_lines (int): Number of lines to include before and after the error.
         
     Returns:
-        List: A list of lines containing error terms.
+        List: A list of error contexts, each containing surrounding lines.
     """
-    error_keywords = ["error", "failure", "exception", "fatal", "panic", "traceback"]
-    error_lines = []
+    error_keywords = ["error", "failure", "exception", "fatal", "panic"]
+    error_contexts = []
+    previous_lines = deque(maxlen=context_lines)
 
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                if any(keyword in line.lower() for keyword in error_keywords):
-                    error_lines.append(line.strip())  # Add the line if it contains error keywords
+            log_lines = f.readlines()
         
-        if error_lines:
-            print(f"Found {len(error_lines)} error lines in {file_path}:")
-            return error_lines
+        for i, line in enumerate(log_lines):
+            if any(keyword in line.lower() for keyword in error_keywords):
+                # Capture context lines before and after the error
+                start = max(0, i - context_lines)
+                end = min(len(log_lines), i + context_lines + 1)
+                error_snippet = log_lines[start:end]
+                error_contexts.append("".join(error_snippet).strip())
+
+            previous_lines.append(line)
+
+        if error_contexts:
+            print(f"Found {len(error_contexts)} errors with context in {file_path}:")
+            return error_contexts
         else:
             print(f"No errors found in {file_path}.")
             return []
