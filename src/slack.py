@@ -1,14 +1,17 @@
 import os
+import re
 import logging
 import signal
 import sys
 import time
+import json
 from langchain.tools import Tool
 from langchain.chat_models import ChatOpenAI
 from langchain.agents import initialize_agent
 from langchain.agents import AgentType
 from src.config import SLACK_BOT_TOKEN
-from src.config import INFERENCE_ENDPOINTS, INFERENCE_TOKENS, MODEL_MAP
+from src.prompts import ERROR_FILTER_PROMPT
+from src.config import INFERENCE_ENDPOINTS, INFERENCE_TOKENS, MODEL_MAP, SLACK_CHANNEL_ID
 from src.log_summarizer import download_prow_logs, search_errors_in_file, generate_prompt
 from src.inference import ask_inference_api, analyze_openshift_log, analyze_ansible_log, analyze_generic_log
 from slack_sdk import WebClient
@@ -71,9 +74,24 @@ class SlackMessageFetcher:
                         self.last_seen_timestamp = ts  # Update latest timestamp
                         job_url = extract_link(text)
                         directory_path = download_prow_logs(job_url)
-                        errors_list = search_errors_in_file(directory_path + "/build-log.txt")
-                        if len(errors_list) > 5:
-                            errors_list = errors_list[:5]
+                        full_errors_list = search_errors_in_file(directory_path + "/build-log.txt")
+                        full_errors_list = list(set(full_errors_list))
+                        if len(full_errors_list) > 10:
+                            full_errors_list = full_errors_list[:10]
+                        error_prompt = ERROR_FILTER_PROMPT["user"].format(error_list="\n".join(full_errors_list))
+                        response = ask_inference_api(
+                            messages = [
+                                {"role": "system", "content": ERROR_FILTER_PROMPT["system"]},
+                                {"role": "user", "content": error_prompt},
+                                {"role": "assistant", "content": ERROR_FILTER_PROMPT["assistant"]}
+                            ],
+                            url=INFERENCE_ENDPOINTS["Generic"],
+                            api_token=INFERENCE_TOKENS["Generic"],
+                            model=MODEL_MAP["Generic"]
+                        )
+
+                        # Convert JSON response to a Python list
+                        errors_list = response.split("\n")
                         errors_list_string = "\n".join(errors_list)
                         self.client.chat_postMessage(
                             channel=self.CHANNEL_ID,
@@ -87,16 +105,6 @@ class SlackMessageFetcher:
                         )
                         error_prompt = generate_prompt(errors_list)
                         error_summary = ask_inference_api(messages=error_prompt, url=INFERENCE_ENDPOINTS["Generic"], api_token=INFERENCE_TOKENS["Generic"], model=MODEL_MAP["Generic"])
-                        self.client.chat_postMessage(
-                            channel=self.CHANNEL_ID,
-                            text=(
-                                ":thought_balloon: *Initial Thoughts*"
-                                "\n```"
-                                f"\n{error_summary}\n"
-                                "```"
-                            ),
-                            thread_ts=ts
-                        )
                         llm = ChatOpenAI(model_name=MODEL_MAP["Generic"], openai_api_key=INFERENCE_TOKENS["Generic"], base_url=INFERENCE_ENDPOINTS["Generic"]+"/v1")
                         openshift_tool = Tool(
                             name="OpenShift Log Analyzer",
@@ -125,7 +133,7 @@ class SlackMessageFetcher:
                         self.client.chat_postMessage(
                             channel=self.CHANNEL_ID,
                             text=(
-                                ":done_it_is: *Final Thoughts*"
+                                ":fast_forward: *Implications to understand*"
                                 "\n```"
                                 f"\n{response}\n"
                                 "```"
@@ -160,5 +168,5 @@ class SlackMessageFetcher:
 
 # export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 if __name__ == "__main__":
-    fetcher = SlackMessageFetcher(channel_id="C08JS8BVDJ8", poll_interval=10)
+    fetcher = SlackMessageFetcher(channel_id=SLACK_CHANNEL_ID, poll_interval=10)
     fetcher.run()
