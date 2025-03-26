@@ -12,7 +12,7 @@ from langchain.agents import AgentType
 from src.config import SLACK_BOT_TOKEN
 from src.prompts import ERROR_FILTER_PROMPT
 from src.config import INFERENCE_ENDPOINTS, INFERENCE_TOKENS, MODEL_MAP, SLACK_CHANNEL_ID
-from src.log_summarizer import download_prow_logs, search_errors_in_file, generate_prompt
+from src.log_summarizer import download_prow_logs, search_errors_in_file, generate_prompt, download_url_to_log
 from src.inference import ask_inference_api, analyze_openshift_log, analyze_ansible_log, analyze_generic_log
 from slack_sdk import WebClient
 from src.utils import extract_link
@@ -50,6 +50,7 @@ class SlackMessageFetcher:
 
     def fetch_messages(self):
         """Fetches only the latest messages from the Slack channel."""
+        select_agent = {"Openshift": False, "Ansible": False}
         try:
             params = {"channel": self.CHANNEL_ID, "limit": 1}
             if self.last_seen_timestamp:
@@ -73,7 +74,19 @@ class SlackMessageFetcher:
                         logging.info(f"📩 New message from {user}: {text}")
                         self.last_seen_timestamp = ts  # Update latest timestamp
                         job_url = extract_link(text)
-                        directory_path = download_prow_logs(job_url)
+                        if job_url:
+                            directory_path = download_prow_logs(job_url)
+                            select_agent["Openshift"] = True
+                        else:
+                           # ansible url link
+                           url_pattern = r"<([^>]+)>"
+                           match = re.search(url_pattern, text)
+                           if match:
+                               url = match.group(1)
+                               logging.info(f"Ansible job url: {url}")
+                               directory_path = download_url_to_log(url, "/build-log.txt")
+                               select_agent["Ansible"] = True
+
                         full_errors_list = search_errors_in_file(directory_path + "/build-log.txt")
                         full_errors_list = list(set(full_errors_list))
                         if len(full_errors_list) > 10:
@@ -128,7 +141,13 @@ class SlackMessageFetcher:
                             agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
                             verbose=True
                         )
-                        response = agent.run(f"The log is classified as Openshift. Analyze the following summary: {error_summary}")
+                        if select_agent["Openshift"]:
+                            response = agent.run(f"The log is classified as Openshift. Analyze the following summary: {error_summary}")
+                        elif select_agent["Ansible"]:
+                            response = agent.run(f"The log is classified as Ansible. Analyze the following summary: {error_summary}")
+                        else:
+                            print("No agent is selected, exiting the application...")
+                            sys.exit(1)
                         print(response)
                         self.client.chat_postMessage(
                             channel=self.CHANNEL_ID,
