@@ -1,6 +1,5 @@
 import requests
-from src.config import INFERENCE_ENDPOINTS, INFERENCE_TOKENS, MODEL_MAP
-from src.prompts import OPENSHIFT_PROMPT, ANSIBLE_PROMPT, GENERIC_APP_PROMPT
+
 
 def ask_inference_api(
     messages, url, api_token, model,
@@ -55,32 +54,20 @@ def ask_inference_api(
     except requests.exceptions.RequestException as e:
         return f"Request failed: {e}"
 
-def analyze_openshift_log(log_summary):
-    """Calls OpenShift's dedicated LLM."""
-    messages = [
-        {"role": "system", "content": OPENSHIFT_PROMPT["system"]},
-        {"role": "user", "content": OPENSHIFT_PROMPT["user"].format(summary=log_summary)},
-        {"role": "assistant", "content": OPENSHIFT_PROMPT["assistant"]}
-    ]
-    response = ask_inference_api(messages=messages, url=INFERENCE_ENDPOINTS["OpenShift"], api_token=INFERENCE_TOKENS["OpenShift"], model=MODEL_MAP["OpenShift"], max_tokens=1024)
-    return response
+def analyze_log(product, product_config):
+    """Returns a callable that analyzes logs for a given product."""
+    def _wrapped(log_summary):
+        messages = [
+            {"role": "system", "content": product_config["prompt"][product]["system"]},
+            {"role": "user", "content": product_config["prompt"][product]["user"].format(summary=log_summary)},
+            {"role": "assistant", "content": product_config["prompt"][product]["assistant"]}
+        ]
 
-def analyze_ansible_log(log_summary):
-    """Calls Ansible's dedicated LLM."""
-    messages = [
-        {"role": "system", "content": ANSIBLE_PROMPT["system"]},
-        {"role": "user", "content": ANSIBLE_PROMPT["user"].format(summary=log_summary)},
-        {"role": "assistant", "content": ANSIBLE_PROMPT["assistant"]}
-    ]
-    response = ask_inference_api(messages=messages, url=INFERENCE_ENDPOINTS["Ansible"], api_token=INFERENCE_TOKENS["Ansible"], model=MODEL_MAP["Ansible"], max_tokens=1024)
-    return response
-
-def analyze_generic_log(log_summary):
-    """Calls a general-purpose LLM for logs that don’t match OpenShift or Ansible."""
-    messages = [
-        {"role": "system", "content": GENERIC_APP_PROMPT["system"]},
-        {"role": "user", "content": GENERIC_APP_PROMPT["user"].format(summary=log_summary)},
-        {"role": "assistant", "content": GENERIC_APP_PROMPT["assistant"]}
-    ]
-    response = ask_inference_api(messages=messages, url=INFERENCE_ENDPOINTS["Generic"], api_token=INFERENCE_TOKENS["Generic"], model=MODEL_MAP["Generic"], max_tokens=1024)
-    return response
+        return ask_inference_api(
+            messages=messages, 
+            url=product_config["endpoint"][product], 
+            api_token=product_config["token"][product], 
+            model=product_config["model"][product], 
+            max_tokens=1024
+        )
+    return _wrapped

@@ -32,7 +32,6 @@ def download_url_to_log(url, log_file_path):
         print(f"An error occurred: {e}")
     return output_dir
 
-
 def download_prow_logs(url, output_dir="/tmp/"):
     """
     Extracts the GCS path from the URL and downloads the entire log directory.
