@@ -9,18 +9,18 @@ def ask_inference_api(
     """
     Sends a request to the inference API with configurable parameters.
 
-    :param messages: List of message dictionaries with 'role' and 'content'.
-    :param url: Inference API base URL.
-    :param api_token: API authentication token.
-    :param model: Model to use for inference (default: gpt-4).
-    :param top_p: Nucleus sampling probability (default: 0.95).
-    :param frequency_penalty: Penalty for frequent tokens (default: 1.03).
-    :param temperature: Controls randomness (default: 0.01).
-    :param max_tokens: Maximum tokens to generate (default: 512).
-    :param organization: Optional organization ID.
-    :param cache: Optional cache settings.
-    :param verbose: If True, prints additional logs.
-    :return: AI response text or an error message.
+    :param messages: List of message dictionaries with 'role' and 'content'
+    :param url: Inference API base URL
+    :param api_token: API authentication token
+    :param model: Model to use for inference (default: gpt-4)
+    :param top_p: Nucleus sampling probability (default: 0.95)
+    :param frequency_penalty: Penalty for frequent tokens (default: 1.03)
+    :param temperature: Controls randomness (default: 0.01)
+    :param max_tokens: Maximum tokens to generate (default: 512)
+    :param organization: Optional organization ID
+    :param cache: Optional cache settings
+    :param verbose: If True, prints additional logs
+    :return: AI response text or an error message
     """
     headers = {
         "Authorization": f"Bearer {api_token}",
@@ -55,7 +55,13 @@ def ask_inference_api(
         return f"Request failed: {e}"
 
 def analyze_log(product, product_config):
-    """Returns a callable that analyzes logs for a given product."""
+    """
+    Returns a callable that analyzes logs for a given product.
+
+    :param product: product name
+    :param product_config: product configuration
+    :return: a call function to be invoked in the runtime
+    """
     def _wrapped(log_summary):
         messages = [
             {"role": "system", "content": product_config["prompt"][product]["system"]},

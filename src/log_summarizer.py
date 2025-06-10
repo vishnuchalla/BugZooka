@@ -1,17 +1,196 @@
+import os
 import re
 import subprocess
 import requests
 from collections import deque
 from src.prompts import ERROR_SUMMARIZATION_PROMPT
+from src.utils import download_file_from_gcs, filter_most_frequent_errors, list_gcs_files, run_shell_command
 
+
+def download_prow_build_log(gcs_path, output_dir):
+    """
+    Download the build-log.txt file.
+
+    :param gcs_path: path in gcs storage
+    :param output_dir: output directory to store artifacts
+    :return: None
+    """
+    file_url = f"gs://{gcs_path}/build-log.txt"
+    download_file_from_gcs(file_url, output_dir)
+
+def get_prow_inner_artifact_files(gcs_path):
+    """
+    Given a GCS path to a Prow job, return the list of files inside the nested log folder
+    under 'artifacts/' (e.g. artifacts/<log_folder>/*).
+
+    :param gcs_path: path in gcs storage
+    :return: a tuple of gcs folder path and the inner files
+    """
+    artifact_path = f"gs://{gcs_path}/artifacts/"
+    top_files = list_gcs_files(artifact_path)
+
+    # Identify nested log folder (match last segment with gcs_path)
+    log_folder = next(
+        (f.strip("/").split("/")[-1] for f in top_files if f.strip("/").split("/")[-1] in gcs_path),
+        None
+    )
+    if not log_folder:
+        print("No matching log folder found.")
+        return None, []
+
+    log_folder_path = f"{artifact_path}{log_folder}/"
+    inner_files = list_gcs_files(log_folder_path)
+    return log_folder_path, inner_files
+
+def download_prow_orion_xmls(gcs_path, output_dir):
+    """
+    Downloads all orion xmls to the output directory.
+
+    :param gcs_path: path in gcs storage
+    :param output_dir: output directory to store artifacts
+    :return: None
+    """
+    try:
+        log_folder_path, inner_files = get_prow_inner_artifact_files(gcs_path)
+        if not log_folder_path:
+            return
+
+        orion_folders = [f.strip("/").split("/")[-1] for f in inner_files if "orion" in f]
+
+        orion_xmls = []
+        for folder in orion_folders:
+            xml_path = f"{log_folder_path}{folder}/artifacts/"
+            xml_files = list_gcs_files(xml_path)
+            orion_xmls.extend(f for f in xml_files if f.endswith(".xml"))
+
+        for xml_url in orion_xmls:
+            download_file_from_gcs(xml_url, output_dir)
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error processing Orion XMLs: {e.stderr}")
+
+def download_prow_cluster_operators(gcs_path, output_dir):
+    """
+    Downloads prow clusteroperators.json file.
+
+    :param gcs_path: path in gcs storage
+    :param output_dir: output directory to store artifacts
+    :return: None
+    """
+    try:
+        log_folder_path, _ = get_prow_inner_artifact_files(gcs_path)
+        if not log_folder_path:
+            return
+        download_file_from_gcs(f"{log_folder_path}gather-extra/artifacts/clusteroperators.json", output_dir)
+    except subprocess.CalledProcessError as e:
+        print(f"Error downloading clusteroperators.json: {e.stderr}")
+
+def download_prow_logs(url, output_dir="/tmp/"):
+    """
+    Extract GCS path from the URL and download build logs and orion XMLs.
+
+    :param url: prow logs url
+    :param output_dir: output directory to store artifacts
+    :return: log directory
+    """
+    match = re.search(r"/(\d+)$", url)
+    if not match:
+        raise ValueError("Invalid URL format: Cannot extract build ID")
+
+    build_id = match.group(1)
+
+    if "view/gs/" not in url:
+        raise ValueError("Invalid Prow URL: GCS path not found.")
+
+    gcs_path = url.split("view/gs/")[1]
+
+    log_dir = os.path.join(output_dir, build_id)
+    orion_dir = os.path.join(log_dir, "orion")
+
+    os.makedirs(orion_dir, exist_ok=True)
+
+    download_prow_build_log(gcs_path, log_dir)
+    download_prow_cluster_operators(gcs_path, log_dir)
+    download_prow_orion_xmls(gcs_path, orion_dir)
+
+    return log_dir
+
+def get_logjuicer_extract(directory_path, job_name):
+    """Extracts erros using logjuicer using fallback mechanism.
+
+    :param directory_path: path of output directory
+    :param job name: job name for the failure
+    :return: a list of errors
+    """
+    file_path = os.path.join(directory_path, f"{job_name}.txt")
+    url = f"https://raw.githubusercontent.com/vishnuchalla/ocp-qe-prow-build-logs/main/{job_name}.txt"
+
+    try:
+        print(f"Attempting to download log file from: {url}")
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+
+        with open(file_path, "w") as f:
+            f.write(response.text)
+        print(f"Downloaded and saved to: {file_path}")
+        try:
+            full_errors_cmd = f"logjuicer diff {file_path} {directory_path}/build-log.txt | cut -d '|' -f2- | grep -i -e 'error' -e 'failure' -e 'exception' -e 'fatal' -e 'panic'"
+            full_errors = run_shell_command(full_errors_cmd)
+        except Exception as e:
+            print(f"Failed to execute logjuicer full errors command: {e}")
+            return None
+        try:
+            frequent_errors_cmd = f"logjuicer diff {file_path} {directory_path}/build-log.txt | cut -d '|' -f2- | logmine | grep -i -e 'error' -e 'failure' -e 'exception' -e 'fatal' -e 'panic'"
+            frequent_errors = run_shell_command(frequent_errors_cmd)
+            return filter_most_frequent_errors(full_errors, frequent_errors)
+        except Exception as e:
+            print(f"Failed to execute logjuicer frequent errors command: {e}")
+            return full_errors
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to fetch log file: {e}")
+        return None
+
+def get_logmine_extract(directory_path):
+    """
+    Extracts errors using logmine with a fallback mechanism.
+    
+    :param directory_path: path of output directory
+    :return: a list of errors
+    """
+    try:
+        full_errors_cmd = f"cat {directory_path}/build-log.txt | cut -d '|' -f2- | grep -i -e 'error' -e 'failure' -e 'exception' -e 'fatal' -e 'panic'"
+        full_errors = run_shell_command(full_errors_cmd)
+    except Exception as e:
+        print(f"Failed to execute full errors command: {e}")
+        return None
+    try:
+        frequent_errors_cmd = f"cat {directory_path}/build-log.txt | cut -d '|' -f2- | logmine | grep -i -e 'error' -e 'failure' -e 'exception' -e 'fatal' -e 'panic'"
+        frequent_errors = run_shell_command(frequent_errors_cmd)
+        return filter_most_frequent_errors(full_errors, frequent_errors)
+    except Exception as e:
+        print(f"Failed to execute logmine frequent errors command: {e}")
+        return full_errors
+
+def search_prow_errors(directory_path, job_name):
+    """
+    Extracts errors by using multiple mechanisms.
+    
+    :param directory_path: path of output directory
+    :param directory_path: job name for the failure
+    :return: a list of errors
+    """
+    logjuicer_extract = get_logjuicer_extract(directory_path, job_name)
+    if logjuicer_extract is None:
+        return get_logmine_extract(directory_path)
+    return logjuicer_extract
 
 def download_url_to_log(url, log_file_path):
     """
     Downloads the content from a given URL and writes it to a log file.
 
-    Args:
-        url (str): The URL to download content from.
-        log_file_path (str): The path to the log file.
+    :param url: url of the job
+    :param log_file_path: log file path
+    :return: output directory
     """
     output_dir = "/tmp"
     log_file_path = output_dir + log_file_path
@@ -32,49 +211,13 @@ def download_url_to_log(url, log_file_path):
         print(f"An error occurred: {e}")
     return output_dir
 
-def download_prow_logs(url, output_dir="/tmp/"):
-    """
-    Extracts the GCS path from the URL and downloads the entire log directory.
-    
-    :param prow_url: The Prow CI log URL
-    :param output_dir: Directory where logs should be stored (default: current directory)
-    :return: BuildID for futher processing
-    """
-    # Extract build ID from the URL (last part after the last '/')
-    match = re.search(r"/(\d+)$", url)
-    if not match:
-        raise ValueError("Invalid URL format: Cannot extract build ID")
-    
-    build_id = match.group(1)
-    
-    # Extract the GCS path from the URL
-    if "view/gs/" in url:
-        gcs_path = url.split("view/gs/")[1]
-    else:
-        raise ValueError("Invalid Prow URL: GCS path not found.")
-
-    # Construct the gsutil command
-    gsutil_command = f"gsutil -m cp -r gs://{gcs_path}/ {output_dir}"
-
-    # Execute the command
-    try:
-        print(f"Executing: {gsutil_command}")
-        subprocess.run(gsutil_command, shell=True, check=True)
-        print("Logs downloaded successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"Error downloading logs: {e}")
-    return output_dir + build_id
-
 def search_errors_in_file(file_path, context_lines=3):
     """
     Opens a log file and searches for error terms while capturing context.
     
-    Args:
-        file_path (str): The path of the log file to search for errors.
-        context_lines (int): Number of lines to include before and after the error.
-        
-    Returns:
-        List: A list of error contexts, each containing surrounding lines.
+    :param file_path: The path of the log file to search for errors
+    :param context_lines: Number of lines to include before and after the error
+    :return: A list of error contexts, each containing surrounding lines
     """
     error_keywords = ["error", "failure", "exception", "fatal", "panic"]
     error_contexts = []
@@ -106,11 +249,16 @@ def search_errors_in_file(file_path, context_lines=3):
         return []
 
 def generate_prompt(error_list):
-    """Generates a structured prompt for the LLM to analyze relevant error logs."""
+    """
+    Generates a structured prompt for the LLM to analyze relevant error logs.
+
+    :param error_list: list of errors
+    :return: prompt messages
+    """
     # Convert to messages list format
     messages = [
         {"role": "system", "content": ERROR_SUMMARIZATION_PROMPT["system"]},
-        {"role": "user", "content": ERROR_SUMMARIZATION_PROMPT["user"].format(error_list="\n".join(error_list))},
+        {"role": "user", "content": ERROR_SUMMARIZATION_PROMPT["user"].format(error_list="\n".join(error_list)[:8192])},
         {"role": "assistant", "content": ERROR_SUMMARIZATION_PROMPT["assistant"]}
     ]
     return messages
