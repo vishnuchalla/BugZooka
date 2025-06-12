@@ -1,6 +1,6 @@
 # **BugZooka**
 Broadcasting issues and errors.
-![Flow Diagram](assets/flow_diagram.png)
+![Flow Diagram](assets/flow_diagram.jpg)
 
 
 ## **Environment Setup**

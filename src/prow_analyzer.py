@@ -61,7 +61,7 @@ def analyze_prow_artifacts(directory_path, job_name):
     if not os.path.isfile(cluster_operators_file_path):
         with open(build_file_path, 'r', errors='replace') as f:
             build_log_content = list(deque(f, maxlen=100))
-        return ["Cluster installation issues, cloudn't even find clusteroperators.json file", "\n".join(build_log_content)], False
+        return ["\n Somehow couldn't find clusteroperators.json file", "\n".join(build_log_content)], False
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
         orion_errors = scan_orion_xmls(directory_path)
