@@ -12,6 +12,9 @@ SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", None)
 def get_product_config(product_name: str):
     """
     Dynamically fetch inference config based on the product name.
+
+    :param product_name: product name
+    :return: inference details based on product
     """
     with open("prompts.json") as f:
         PROMPT_DATA = json.load(f)
