@@ -16,7 +16,7 @@ Python 3.11 and above is recommended for the environment setup.
 ```
 python3 slack.py --help
 
-usage: slack.py [-h] [--product PRODUCT] [--ci CI] [--mapping-config MAPPING_CONFIG]
+usage: slack.py [-h] [--product PRODUCT] [--ci CI]
 
 Slack Log Analyzer Bot
 
@@ -24,8 +24,6 @@ options:
   -h, --help            show this help message and exit
   --product PRODUCT     Product type (e.g., openshift, ansible)
   --ci CI               CI system name
-  --mapping-config MAPPING_CONFIG
-                        Path to mapping config
 ```
 
 ## **Configurables**
@@ -89,5 +87,5 @@ podman build -f Dockerfile -t=quay.io/YOUR_REPO/bugzooka:latest .
 podman push quay.io/YOUR_REPO/bugzooka:latest
 
 // Run as a container
-podman run -d   -e PRODUCT=openshift   -e CI_NAME=prow   -v /path-to/prompts.json:/app/prompts.json:Z   -v /path-to/.env:/app/.env:Z  quay.io/YOUR_REPO/bugzooka:latest
+podman run -d   -e PRODUCT=openshift   -e CI=prow   -v /path-to/prompts.json:/app/prompts.json:Z   -v /path-to/.env:/app/.env:Z  quay.io/YOUR_REPO/bugzooka:latest
 ```

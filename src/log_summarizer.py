@@ -201,7 +201,7 @@ def download_url_to_log(url, log_file_path):
         response.raise_for_status()
         
         with open(log_file_path, 'wb') as file:
-            for chunk in response.iter_content(chunk_size=8192):
+            for chunk in response.iter_content(chunk_size=6100):
                 file.write(chunk)
         print(f"Successfully downloaded content from {url} to {log_file_path}")
     
@@ -258,7 +258,7 @@ def generate_prompt(error_list):
     # Convert to messages list format
     messages = [
         {"role": "system", "content": ERROR_SUMMARIZATION_PROMPT["system"]},
-        {"role": "user", "content": ERROR_SUMMARIZATION_PROMPT["user"].format(error_list="\n".join(error_list)[:8192])},
+        {"role": "user", "content": ERROR_SUMMARIZATION_PROMPT["user"].format(error_list="\n".join(error_list)[:6100])},
         {"role": "assistant", "content": ERROR_SUMMARIZATION_PROMPT["assistant"]}
     ]
     return messages

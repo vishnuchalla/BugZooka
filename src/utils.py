@@ -9,12 +9,17 @@ def extract_job_details(text):
     :param text: message text in slack
     :return: job link and the job name
     """
-    URL_PATTERN = re.compile(r"(https://[^\s|]+)")
-    url_match = URL_PATTERN.search(text)
-    name_match = re.search(r"Job\s+\*?(.+?)\*?\s+ended", text)
-    if url_match and name_match:
-        return url_match.group(0), name_match.group(1)
-    return None, None
+    try:
+        URL_PATTERN = re.compile(r"(https://[^\s|]+)")
+        url_match = URL_PATTERN.search(text)
+        name_match = re.search(r"Job\s+\*?(.+?)\*?\s+ended", text)
+        if url_match and name_match:
+            return url_match.group(0), name_match.group(1)
+        return None, None
+    except Exception as e:
+        print(f"Failure in extracting job details: {e}")
+        return None, None
+        
 
 def run_shell_command(command):
     """
