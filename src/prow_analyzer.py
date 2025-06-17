@@ -1,10 +1,12 @@
 import os
 import json
+import logging
 from collections import deque
 from pathlib import Path
 from src.xmlparser import summarize_orion_xml
 from src.log_summarizer import search_prow_errors
 
+logger = logging.getLogger(__name__)
 
 def get_cluster_operator_errors(directory_path):
     """
@@ -27,7 +29,7 @@ def get_cluster_operator_errors(directory_path):
                     condition["status"].append(each_dict)
         return err_conditions
     except Exception as e:
-        print(f"Failed to fetch log file: {e}")
+        logger.error(f"Failed to fetch log file: {e}")
         return []
 
 def scan_orion_xmls(directory_path):

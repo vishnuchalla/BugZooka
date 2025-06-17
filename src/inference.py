@@ -1,5 +1,7 @@
+import logging
 import requests
 
+logger = logging.getLogger(__name__)
 
 def ask_inference_api(
     messages, url, api_token, model,
@@ -44,7 +46,7 @@ def ask_inference_api(
         payload["cache"] = cache
 
     if verbose:
-        print("Sending request with payload:", payload)
+        logger.info("Sending request with payload:", payload)
 
     try:
         response = requests.post(f"{url}/v1/chat/completions", json=payload, headers=headers)
