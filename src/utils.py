@@ -1,6 +1,8 @@
 import re
+import logging
 import subprocess
 
+logger = logging.getLogger(__name__)
 
 def extract_job_details(text):
     """
@@ -17,9 +19,8 @@ def extract_job_details(text):
             return url_match.group(0), name_match.group(1)
         return None, None
     except Exception as e:
-        print(f"Failure in extracting job details: {e}")
+        logger.error(f"Failure in extracting job details: {e}")
         return None, None
-        
 
 def run_shell_command(command):
     """
@@ -28,7 +29,7 @@ def run_shell_command(command):
     :param command: shell command to execute
     :return: command output
     """
-    print(f"Executing: {command}")
+    logger.info(f"Executing: {command}")
     result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
     return result.stdout.strip().splitlines()
 
@@ -53,11 +54,11 @@ def download_file_from_gcs(gcs_url, local_path):
     command = f"gsutil -m cp -r {gcs_url} {local_path}"
     file_name = gcs_url.strip("/").split("/")[-1]
     try:
-        print(f"Downloading {file_name}...")
+        logger.info(f"Downloading {file_name}...")
         subprocess.run(command, shell=True, check=True)
-        print(f"{file_name} downloaded successfully.")
+        logger.info(f"{file_name} downloaded successfully.")
     except subprocess.CalledProcessError as e:
-        print(f"Error downloading {file_name}: {e}")
+        logger.error(f"Error downloading {file_name}: {e}")
 
 def filter_most_frequent_errors(full_errors, frequent_errors):
     """
