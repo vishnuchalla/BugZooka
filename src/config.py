@@ -30,9 +30,9 @@ def get_product_config(product_name: str):
     INFERENCE_PROMPT_MAP = {
         "GENERIC": PROMPT_DATA.get("GENERIC_PROMPT", GENERIC_APP_PROMPT),
     }
-    INFERENCE_TOKENS[product_name] = os.getenv(f"{product_name}_INFERENCE_TOKEN")
-    INFERENCE_MODEL_MAP[product_name] = os.getenv(f"{product_name}_MODEL")
-    INFERENCE_ENDPOINTS[product_name] = os.getenv(f"{product_name}_INFERENCE_URL")
+    INFERENCE_TOKENS[product_name] = os.getenv(f"{product_name}_INFERENCE_TOKEN") or ""
+    INFERENCE_MODEL_MAP[product_name] = os.getenv(f"{product_name}_MODEL") or ""
+    INFERENCE_ENDPOINTS[product_name] = os.getenv(f"{product_name}_INFERENCE_URL") or ""
     INFERENCE_PROMPT_MAP[product_name] = PROMPT_DATA.get(f"{product_name}_PROMPT", GENERIC_APP_PROMPT)
 
     if not INFERENCE_TOKENS[product_name] or not INFERENCE_MODEL_MAP[product_name] or not INFERENCE_ENDPOINTS[product_name] or not INFERENCE_PROMPT_MAP[product_name]:

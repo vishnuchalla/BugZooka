@@ -5,15 +5,14 @@ import signal
 import sys
 import time
 import argparse
-from langchain.tools import Tool
-from langchain.chat_models import ChatOpenAI
-from langchain.agents import initialize_agent
-from langchain.agents import AgentType
+from langchain.chat_models.openai import ChatOpenAI
+from langchain.agents import Tool, initialize_agent, AgentType
+from functools import partial
 from src.config import SLACK_BOT_TOKEN, SLACK_CHANNEL_ID, get_product_config
 from src.prompts import ERROR_FILTER_PROMPT
 from src.logging import configure_logging
 from src.log_summarizer import download_prow_logs, search_errors_in_file, generate_prompt, download_url_to_log
-from src.inference import ask_inference_api, analyze_log
+from src.inference import ask_inference_api, analyze_product_log, analyze_generic_log
 from slack_sdk import WebClient
 from src.utils import extract_job_details, get_slack_message_blocks
 from src.prow_analyzer import analyze_prow_artifacts
@@ -100,7 +99,7 @@ class SlackMessageFetcher:
                                     requires_llm = True  # Assuming you want LLM for ansible too?
 
                             if requires_llm:
-                                error_prompt = ERROR_FILTER_PROMPT["user"].format(error_list="\n".join(errors_list)[:6100])
+                                error_prompt = ERROR_FILTER_PROMPT["user"].format(error_list="\n".join(errors_list or [])[:6100])
                                 response = ask_inference_api(
                                     messages=[
                                         {"role": "system", "content": ERROR_FILTER_PROMPT["system"]},
@@ -115,7 +114,7 @@ class SlackMessageFetcher:
                                 # Convert JSON response to a Python list
                                 errors_list = response.split("\n")
 
-                            errors_list_string = "\n".join(errors_list)[:6100]
+                            errors_list_string = "\n".join(errors_list or [])[:6100]
                             message_block = get_slack_message_blocks(
                                     markdown_header=":checking: *Error Logs Preview*\n",
                                     preformatted_text=errors_list_string
@@ -137,34 +136,35 @@ class SlackMessageFetcher:
                             )
 
                             llm = ChatOpenAI(
-                                model_name=product_config["model"]["GENERIC"],
-                                openai_api_key=product_config["token"]["GENERIC"],
+                                model=product_config["model"]["GENERIC"],
+                                api_key=product_config["token"]["GENERIC"],
                                 base_url=product_config["endpoint"]["GENERIC"] + "/v1"
                             )
 
                             product_tool = Tool(
-                                name="Product Log Analyzer",
-                                func=analyze_log(product, product_config),
-                                description="Use this tool for product related log summaries. Provide input as JSON with 'log_summary', 'product', and 'product_config'."
+                                name=f"analyze_product_log",
+                                func=partial(analyze_product_log, product, product_config),
+                                description=f"Analyze {product} logs from error summary. Input should be the error summary."
                             )
-                            generic_tool = Tool(
-                                name="Generic Log Analyzer",
-                                func=analyze_log("GENERIC", product_config),
-                                description="Use this tool for any general log summaries. Provide input as JSON with 'log_summary', 'product', and 'product_config'."
-                            )
-                            TOOLS = [product_tool, generic_tool]
 
+                            generic_tool = Tool(
+                                name="analyze_generic_log",
+                                func=partial(analyze_generic_log, product_config),
+                                description="Analyze general logs from error summary. Input should be the error summary."
+                            )
+
+                            TOOLS = [product_tool, generic_tool]
                             agent = initialize_agent(
                                 tools=TOOLS,
                                 llm=llm,
                                 agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
                                 verbose=True,
                                 handle_parsing_errors=True,
+                                max_iterations=10
                             )
-                            if product:
-                                response = agent.run(f"This log is classified as product. Please analyze the summary: {error_summary}")
-                            else:
-                                response = agent.run(f"This log is classified as generic. Please analyze the summary: {error_summary}")
+
+                            query = f"Please analyze this {product} specific error summary: {error_summary} using the appropriate tool and provide me potential next steps to debug this issue as a final answer"
+                            response = agent.run(query)
 
                             message_block = get_slack_message_blocks(
                                     markdown_header=":fast_forward: *Implications to understand*\n",

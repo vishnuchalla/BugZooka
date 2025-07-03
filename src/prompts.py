@@ -22,7 +22,7 @@ GENERIC_APP_PROMPT = {
               "and suggest relevant fixes based on best practices. "
               "Focus on application-specific failures rather than infrastructure or environment issues.",
 
-    "user": "Here is a log summary from an application failure:\n\n{summary}\n\n"
+    "user": "Here is a log summary from an application failure:\n\n{error_summary}\n\n"
             "Based on this summary, provide a structured breakdown of:\n"
             "- The failing component or service\n"
             "- The probable root cause of the failure\n"
