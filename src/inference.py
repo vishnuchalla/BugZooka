@@ -56,26 +56,57 @@ def ask_inference_api(
     except requests.exceptions.RequestException as e:
         return f"Request failed: {e}"
 
-def analyze_log(product, product_config):
+def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
     """
-    Returns a callable that analyzes logs for a given product.
+    Analyzes log summaries (generic or product-specific) using config-driven prompting.
 
-    :param product: product name
-    :param product_config: product configuration
-    :return: a call function to be invoked in the runtime
+    :param product: Product name or "GENERIC"
+    :param product_config: Config dict with prompt, endpoint, token, and model info
+    :param error_summary: Error summary text to analyze
+    :return: Analysis result
     """
-    def _wrapped(log_summary):
+    try:
+        prompt_config = product_config["prompt"][product]
+        try:
+            formatted_content = prompt_config["user"].format(error_summary=error_summary)
+        except KeyError:
+            formatted_content = prompt_config["user"].format(summary=error_summary)
+
         messages = [
-            {"role": "system", "content": product_config["prompt"][product]["system"]},
-            {"role": "user", "content": product_config["prompt"][product]["user"].format(summary=log_summary)},
-            {"role": "assistant", "content": product_config["prompt"][product]["assistant"]}
+            {"role": "system", "content": prompt_config["system"]},
+            {"role": "user", "content": formatted_content},
+            {"role": "assistant", "content": prompt_config["assistant"]}
         ]
 
         return ask_inference_api(
-            messages=messages, 
-            url=product_config["endpoint"][product], 
-            api_token=product_config["token"][product], 
-            model=product_config["model"][product], 
+            messages=messages,
+            url=product_config["endpoint"][product],
+            api_token=product_config["token"][product],
+            model=product_config["model"][product],
             max_tokens=1024
         )
-    return _wrapped
+
+    except Exception as e:
+        logger.error(f"Error analyzing {product} log: {e}")
+        return f"Error analyzing log: {e}"
+
+def analyze_product_log(product, product_config, error_summary):
+    """
+    Analyzes product-specific log summaries.
+
+    :param product: product name
+    :param product_config: product configuration
+    :param error_summary: error summary text to analyze
+    :return: analysis result
+    """
+    return analyze_log(product, product_config, error_summary)
+
+def analyze_generic_log(product_config, error_summary):
+    """
+    Analyzes generic log summaries.
+
+    :param product_config: product configuration
+    :param error_summary: error summary text to analyze
+    :return: analysis result
+    """
+    return analyze_log("GENERIC", product_config, error_summary)
