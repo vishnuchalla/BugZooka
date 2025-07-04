@@ -1,6 +1,7 @@
 import re
 import logging
 import subprocess
+from src.constants import TOP_N_ERRROS
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +86,9 @@ def filter_most_frequent_errors(full_errors, frequent_errors):
     for _, errors in sorted_freqs:
         for e in errors:
             top_errors_set.add(e)
-            if len(top_errors_set) >= 10:
+            if len(top_errors_set) >= TOP_N_ERRROS:
                 break
-        if len(top_errors_set) >= 10:
+        if len(top_errors_set) >= TOP_N_ERRROS:
             break
     top_error_patterns = [re.compile(re.escape(err)) for err in top_errors_set]
     top_errors_from_full = [

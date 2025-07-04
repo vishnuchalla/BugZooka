@@ -1,12 +1,13 @@
 import logging
 import requests
+from src.constants import GENERIC, INFERENCE_TOP_P, INFERENCE_FREQUENCY_PENALTY, INFERENCE_TEMPERATURE, INFERENCE_MAX_TOKENS
 
 logger = logging.getLogger(__name__)
 
 def ask_inference_api(
     messages, url, api_token, model,
-    top_p=0.95, frequency_penalty=1.03, temperature=0.01,
-    max_tokens=512, organization=None, cache=None, verbose=False
+    top_p=INFERENCE_TOP_P, frequency_penalty=INFERENCE_FREQUENCY_PENALTY, temperature=INFERENCE_TEMPERATURE,
+    max_tokens=INFERENCE_MAX_TOKENS, organization=None, cache=None, verbose=False
 ):
     """
     Sends a request to the inference API with configurable parameters.
@@ -83,7 +84,7 @@ def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
             url=product_config["endpoint"][product],
             api_token=product_config["token"][product],
             model=product_config["model"][product],
-            max_tokens=1024
+            max_tokens=INFERENCE_MAX_TOKENS
         )
 
     except Exception as e:
@@ -109,4 +110,4 @@ def analyze_generic_log(product_config, error_summary):
     :param error_summary: error summary text to analyze
     :return: analysis result
     """
-    return analyze_log("GENERIC", product_config, error_summary)
+    return analyze_log(GENERIC, product_config, error_summary)

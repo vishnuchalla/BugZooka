@@ -3,6 +3,7 @@ import json
 import logging
 from collections import deque
 from pathlib import Path
+from src.constants import BUILD_LOG_TAIL
 from src.xmlparser import summarize_orion_xml
 from src.log_summarizer import search_prow_errors
 
@@ -62,7 +63,7 @@ def analyze_prow_artifacts(directory_path, job_name):
     cluster_operators_file_path = os.path.join(directory_path, f"clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
         with open(build_file_path, 'r', errors='replace') as f:
-            build_log_content = list(deque(f, maxlen=100))
+            build_log_content = list(deque(f, maxlen=BUILD_LOG_TAIL))
         return ["\n Somehow couldn't find clusteroperators.json file", "\n".join(build_log_content)], False
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:

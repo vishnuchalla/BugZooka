@@ -1,4 +1,5 @@
 import os
+import io
 import re
 import logging
 import signal
@@ -9,6 +10,7 @@ from langchain.chat_models.openai import ChatOpenAI
 from langchain.agents import Tool, initialize_agent, AgentType
 from functools import partial
 from src.config import SLACK_BOT_TOKEN, SLACK_CHANNEL_ID, get_product_config
+from src.constants import MAX_CONTEXT_SIZE, MAX_PREVIEW_CONTENT, SLACK_POLL_INTERVAL, MAX_AGENTIC_ITERATIONS
 from src.prompts import ERROR_FILTER_PROMPT
 from src.logging import configure_logging
 from src.log_summarizer import download_prow_logs, search_errors_in_file, generate_prompt, download_url_to_log
@@ -99,7 +101,7 @@ class SlackMessageFetcher:
                                     requires_llm = True  # Assuming you want LLM for ansible too?
 
                             if requires_llm:
-                                error_prompt = ERROR_FILTER_PROMPT["user"].format(error_list="\n".join(errors_list or [])[:6100])
+                                error_prompt = ERROR_FILTER_PROMPT["user"].format(error_list="\n".join(errors_list or [])[:MAX_CONTEXT_SIZE])
                                 response = ask_inference_api(
                                     messages=[
                                         {"role": "system", "content": ERROR_FILTER_PROMPT["system"]},
@@ -113,19 +115,43 @@ class SlackMessageFetcher:
 
                                 # Convert JSON response to a Python list
                                 errors_list = response.split("\n")
+                            
+                            # Prepare logs
+                            errors_log_preview = "\n".join(errors_list or [])[:MAX_PREVIEW_CONTENT]
+                            errors_list_string = "\n".join(errors_list or [])[:MAX_CONTEXT_SIZE]
 
-                            errors_list_string = "\n".join(errors_list or [])[:6100]
-                            message_block = get_slack_message_blocks(
-                                    markdown_header=":checking: *Error Logs Preview*\n",
-                                    preformatted_text=errors_list_string
+                            # Compose preview message
+                            if len(errors_list_string) > MAX_PREVIEW_CONTENT:
+                                preview_message = (
+                                    ":checking: *Error Logs Preview*\n"
+                                    "Here are the first few lines of the error log:\n"
+                                    f"```{errors_log_preview.strip()}```\n"
+                                    "_(Log preview truncated. Full log attached below.)_"
                                 )
-                            self.logger.info("Posting error logs preview to Slack")
-                            self.client.chat_postMessage(
-                                channel=self.CHANNEL_ID,
-                                text="Error Logs Preview",
-                                blocks=message_block,
-                                thread_ts=max_ts
-                            )
+                                # Send both preview and file in a single API call
+                                self.logger.info("📤 Uploading full error log with preview message")
+                                log_bytes = io.BytesIO(errors_list_string.strip().encode("utf-8"))
+                                self.client.files_upload_v2(
+                                    channel=self.CHANNEL_ID,
+                                    file=log_bytes,
+                                    filename="full_errors.log",
+                                    title="Full Error Log",
+                                    thread_ts=max_ts,
+                                    initial_comment=preview_message
+                                )
+                            else:
+                                # Just send the preview as a message
+                                self.logger.info("📤 Trying to just send the preview message")
+                                message_block = get_slack_message_blocks(
+                                    markdown_header=":checking: *Error Logs Preview*\n",
+                                    preformatted_text=f"{errors_log_preview.strip()}"
+                                )
+                                self.client.chat_postMessage(
+                                    channel=self.CHANNEL_ID,
+                                    text="Error Logs Preview",
+                                    blocks=message_block,
+                                    thread_ts=max_ts
+                                )
 
                             error_prompt = generate_prompt(errors_list)
                             error_summary = ask_inference_api(
@@ -160,7 +186,7 @@ class SlackMessageFetcher:
                                 agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
                                 verbose=True,
                                 handle_parsing_errors=True,
-                                max_iterations=10
+                                max_iterations=MAX_AGENTIC_ITERATIONS
                             )
 
                             query = f"Please analyze this {product} specific error summary: {error_summary} using the appropriate tool and provide me potential next steps to debug this issue as a final answer"
@@ -250,5 +276,5 @@ if __name__ == "__main__":
         "product_config": get_product_config(product_name=args.product.upper()),
     }
 
-    fetcher = SlackMessageFetcher(channel_id=SLACK_CHANNEL_ID, logger=logger, poll_interval=10)
+    fetcher = SlackMessageFetcher(channel_id=SLACK_CHANNEL_ID, logger=logger, poll_interval=SLACK_POLL_INTERVAL)
     fetcher.run(**kwargs)

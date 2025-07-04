@@ -4,6 +4,7 @@ import logging
 import subprocess
 import requests
 from collections import deque
+from src.constants import MAX_CONTEXT_SIZE
 from src.prompts import ERROR_SUMMARIZATION_PROMPT
 from src.utils import download_file_from_gcs, filter_most_frequent_errors, list_gcs_files, run_shell_command
 
@@ -203,7 +204,7 @@ def download_url_to_log(url, log_file_path):
         response.raise_for_status()
         
         with open(log_file_path, 'wb') as file:
-            for chunk in response.iter_content(chunk_size=6100):
+            for chunk in response.iter_content(chunk_size=MAX_CONTEXT_SIZE):
                 file.write(chunk)
         logger.info(f"Successfully downloaded content from {url} to {log_file_path}")
     
@@ -260,7 +261,7 @@ def generate_prompt(error_list):
     # Convert to messages list format
     messages = [
         {"role": "system", "content": ERROR_SUMMARIZATION_PROMPT["system"]},
-        {"role": "user", "content": ERROR_SUMMARIZATION_PROMPT["user"].format(error_list="\n".join(error_list)[:6100])},
+        {"role": "user", "content": ERROR_SUMMARIZATION_PROMPT["user"].format(error_list="\n".join(error_list)[:MAX_CONTEXT_SIZE])},
         {"role": "assistant", "content": ERROR_SUMMARIZATION_PROMPT["assistant"]}
     ]
     return messages
