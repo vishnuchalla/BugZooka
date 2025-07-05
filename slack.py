@@ -99,6 +99,7 @@ class SlackMessageFetcher:
                                     requires_llm = True  # Assuming you want LLM for ansible too?
 
                             if requires_llm:
+                                error_step = errors_list[0]
                                 error_prompt = ERROR_FILTER_PROMPT["user"].format(error_list="\n".join(errors_list or [])[:6100])
                                 response = ask_inference_api(
                                     messages=[
@@ -112,7 +113,7 @@ class SlackMessageFetcher:
                                 )
 
                                 # Convert JSON response to a Python list
-                                errors_list = response.split("\n")
+                                errors_list = [error_step + "\n"] + response.split("\n")
 
                             errors_list_string = "\n".join(errors_list or [])[:6100]
                             message_block = get_slack_message_blocks(
