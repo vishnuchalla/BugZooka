@@ -18,4 +18,4 @@ jobs:
 
     - name: build and install
       run: |
-        pip install .
+        pip install -r requirements.txt

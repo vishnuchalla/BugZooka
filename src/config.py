@@ -1,7 +1,9 @@
-import os
 import json
 from src.prompts import GENERIC_APP_PROMPT
+from src.constants import GENERIC_INFERENCE_URL, GENERIC_MODEL
+import os
 from dotenv import load_dotenv
+
 
 load_dotenv()  # Load environment variables
 
@@ -19,10 +21,10 @@ def get_product_config(product_name: str):
     with open("prompts.json") as f:
         PROMPT_DATA = json.load(f)
     INFERENCE_ENDPOINTS = {
-        "GENERIC": os.getenv("GENERIC_INFERENCE_URL", "https://mistral-7b-instruct-v0-3-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443"),
+        "GENERIC": os.getenv("GENERIC_INFERENCE_URL", GENERIC_INFERENCE_URL),
     }
     INFERENCE_MODEL_MAP = {
-        "GENERIC": os.getenv("GENERIC_MODEL", "mistral-7b-instruct"),
+        "GENERIC": os.getenv("GENERIC_MODEL", GENERIC_MODEL),
     }
     INFERENCE_TOKENS = {
         "GENERIC": os.getenv("GENERIC_INFERENCE_TOKEN", ""),
@@ -30,13 +32,25 @@ def get_product_config(product_name: str):
     INFERENCE_PROMPT_MAP = {
         "GENERIC": PROMPT_DATA.get("GENERIC_PROMPT", GENERIC_APP_PROMPT),
     }
-    INFERENCE_TOKENS[product_name] = os.getenv(f"{product_name}_INFERENCE_TOKEN") or ""
-    INFERENCE_MODEL_MAP[product_name] = os.getenv(f"{product_name}_MODEL") or ""
-    INFERENCE_ENDPOINTS[product_name] = os.getenv(f"{product_name}_INFERENCE_URL") or ""
-    INFERENCE_PROMPT_MAP[product_name] = PROMPT_DATA.get(f"{product_name}_PROMPT", GENERIC_APP_PROMPT)
+    INFERENCE_TOKENS[product_name] = os.getenv(
+        f"{product_name}_INFERENCE_TOKEN") or ""
+    INFERENCE_MODEL_MAP[product_name] = os.getenv(
+        f"{product_name}_MODEL") or ""
+    INFERENCE_ENDPOINTS[product_name] = os.getenv(
+        f"{product_name}_INFERENCE_URL") or ""
+    INFERENCE_PROMPT_MAP[product_name] = PROMPT_DATA.get(
+        f"{product_name}_PROMPT", GENERIC_APP_PROMPT
+    )
 
-    if not INFERENCE_TOKENS[product_name] or not INFERENCE_MODEL_MAP[product_name] or not INFERENCE_ENDPOINTS[product_name] or not INFERENCE_PROMPT_MAP[product_name]:
-        raise ValueError(f"Missing env vars for product: {product_name}. Expected: {product_name}_INFERENCE_TOKEN, {product_name}_MODEL, {product_name}_INFERENCE_URL, {product_name}_PROMPT")
+    if (
+        not INFERENCE_TOKENS[product_name]
+        or not INFERENCE_MODEL_MAP[product_name]
+        or not INFERENCE_ENDPOINTS[product_name]
+        or not INFERENCE_PROMPT_MAP[product_name]
+    ):
+        raise ValueError(
+            f"Missing env vars for product: {product_name}. Expected: {product_name}_INFERENCE_TOKEN, {product_name}_MODEL, {product_name}_INFERENCE_URL, {product_name}_PROMPT"
+        )
 
     return {
         "endpoint": INFERENCE_ENDPOINTS,
