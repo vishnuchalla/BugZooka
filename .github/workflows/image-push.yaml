@@ -1,0 +1,36 @@
+name: Image Push
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  build:
+    name: Image Push
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Build BugZooka Image
+      id: build-bugzooka
+      uses: redhat-actions/buildah-build@v2
+      with:
+        image: bugzooka 
+        context: .
+        tags: latest ${{ github.sha }}
+        containerfiles: |
+          ./Dockerfile
+
+    - name: Push bugzooka image to quay.io
+      id: push-bugzooka-to-quay
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: redhat-actions/push-to-registry@v2
+      with:
+        image: ${{ steps.build-bugzooka.outputs.image }}
+        tags: ${{ steps.build-bugzooka.outputs.tags }}
+        registry: quay.io/redhat-performance
+        username: ${{ secrets.QUAY_USER }}
+        password: ${{ secrets.QUAY_TOKEN }}
