@@ -1,6 +1,7 @@
-import os
 import json
 import logging
+import os
+import re
 from collections import deque
 from pathlib import Path
 from src.constants import BUILD_LOG_TAIL
@@ -8,6 +9,7 @@ from src.xmlparser import summarize_orion_xml
 from src.log_summarizer import search_prow_errors
 
 logger = logging.getLogger(__name__)
+
 
 def get_cluster_operator_errors(directory_path):
     """
@@ -17,13 +19,17 @@ def get_cluster_operator_errors(directory_path):
     :return: list of errors
     """
     try:
-        with open(f"{directory_path}/clusteroperators.json", 'r') as f:
+        with open(f"{directory_path}/clusteroperators.json", "r") as f:
             cluster_operators_data = json.load(f)
         err_conditions = []
         for each_item in cluster_operators_data["items"]:
             each_dict = {"Name": each_item["metadata"]["name"]}
             for condition in each_item["status"]["conditions"]:
-                if (condition["type"] == "Degraded" and condition["status"] == "True") or (condition["type"] == "Available" and condition["status"] == "False"):
+                if (
+                    condition["type"] == "Degraded" and condition["status"] == "True"
+                ) or (
+                    condition["type"] == "Available" and condition["status"] == "False"
+                ):
                     each_dict["Status"] = condition["status"]
                     each_dict["Reason"] = condition["reason"]
                     each_dict["Message"] = condition["message"]
@@ -32,6 +38,7 @@ def get_cluster_operator_errors(directory_path):
     except Exception as e:
         logger.error(f"Failed to fetch log file: {e}")
         return []
+
 
 def scan_orion_xmls(directory_path):
     """
@@ -44,31 +51,43 @@ def scan_orion_xmls(directory_path):
     xml_files = base_dir.glob("*.xml")
     for xml_file in xml_files:
         xml_content = summarize_orion_xml(xml_file)
-        if  xml_content != "":
+        if xml_content != "":
             return [xml_content]
     return []
-    
+
 
 def analyze_prow_artifacts(directory_path, job_name):
     """
     Analyzes prow artifacts and extracts errors.
-    
+
     :param directory_path: directory path for the artifacts
     :param job_name: job name to base line with
     :return: list of errors
     """
-    build_file_path = os.path.join(directory_path, f"build-log.txt")
+    pattern = re.compile(r"Logs for container test in pod .*")
+    build_file_path = os.path.join(directory_path, "build-log.txt")
     if not os.path.isfile(build_file_path):
-        return ["Prow maintanence issues, couldn't even find the build-log.txt file"], False
-    cluster_operators_file_path = os.path.join(directory_path, f"clusteroperators.json")
+        return [
+            "Prow maintanence issues, couldn't even find the build-log.txt file"
+        ], False
+    with open(build_file_path, "r", errors="replace") as f:
+        matched_line = next((line.strip()
+                            for line in f if pattern.search(line)), None)
+    cluster_operators_file_path = os.path.join(
+        directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
         with open(build_file_path, 'r', errors='replace') as f:
             build_log_content = list(deque(f, maxlen=BUILD_LOG_TAIL))
-        return ["\n Somehow couldn't find clusteroperators.json file", "\n".join(build_log_content)], False
+        return [
+            "\n Somehow couldn't find clusteroperators.json file",
+            matched_line + "\n",
+            "\n".join(build_log_content),
+        ], False
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
         orion_errors = scan_orion_xmls(directory_path)
         if len(orion_errors) == 0:
-            return search_prow_errors(directory_path, job_name), True
-        return orion_errors, False
-    return cluster_operator_errors, False
+            return [matched_line] + \
+                search_prow_errors(directory_path, job_name), True
+        return [matched_line + "\n"] + orion_errors, False
+    return [matched_line + "\n"] + cluster_operator_errors, False

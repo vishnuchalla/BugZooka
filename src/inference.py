@@ -1,14 +1,23 @@
 import logging
+
 import requests
 from src.constants import GENERIC, INFERENCE_TOP_P, INFERENCE_FREQUENCY_PENALTY, INFERENCE_TEMPERATURE, INFERENCE_MAX_TOKENS
 
 logger = logging.getLogger(__name__)
 
+
 def ask_inference_api(
-    messages, url, api_token, model,
-    top_p=INFERENCE_TOP_P, frequency_penalty=INFERENCE_FREQUENCY_PENALTY, temperature=INFERENCE_TEMPERATURE,
-    max_tokens=INFERENCE_MAX_TOKENS, organization=None, cache=None, verbose=False
-):
+        messages,
+        url,
+        api_token,
+        model,
+        top_p=INFERENCE_TOP_P,
+        frequency_penalty=INFERENCE_FREQUENCY_PENALTY,
+        temperature=INFERENCE_TEMPERATURE,
+        max_tokens=INFERENCE_MAX_TOKENS,
+        organization=None,
+        cache=None,
+        verbose=False):
     """
     Sends a request to the inference API with configurable parameters.
 
@@ -27,9 +36,9 @@ def ask_inference_api(
     """
     headers = {
         "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    
+
     payload = {
         "model": model,
         "messages": messages,
@@ -39,7 +48,7 @@ def ask_inference_api(
         "max_tokens": max_tokens,
         "verbose": True,
     }
-    
+
     # Add optional parameters if they are provided
     if organization:
         payload["organization"] = organization
@@ -50,12 +59,20 @@ def ask_inference_api(
         logger.info("Sending request with payload:", payload)
 
     try:
-        response = requests.post(f"{url}/v1/chat/completions", json=payload, headers=headers)
+        response = requests.post(
+            f"{url}/v1/chat/completions", json=payload, headers=headers
+        )
         response.raise_for_status()
-        return response.json().get("choices", [{}])[0].get("message", {}).get("content", "No content returned.")
-    
+        return (
+            response.json()
+            .get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "No content returned.")
+        )
+
     except requests.exceptions.RequestException as e:
         return f"Request failed: {e}"
+
 
 def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
     """
@@ -69,14 +86,17 @@ def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
     try:
         prompt_config = product_config["prompt"][product]
         try:
-            formatted_content = prompt_config["user"].format(error_summary=error_summary)
+            formatted_content = prompt_config["user"].format(
+                error_summary=error_summary
+            )
         except KeyError:
-            formatted_content = prompt_config["user"].format(summary=error_summary)
+            formatted_content = prompt_config["user"].format(
+                summary=error_summary)
 
         messages = [
             {"role": "system", "content": prompt_config["system"]},
             {"role": "user", "content": formatted_content},
-            {"role": "assistant", "content": prompt_config["assistant"]}
+            {"role": "assistant", "content": prompt_config["assistant"]},
         ]
 
         return ask_inference_api(
@@ -84,12 +104,13 @@ def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
             url=product_config["endpoint"][product],
             api_token=product_config["token"][product],
             model=product_config["model"][product],
-            max_tokens=INFERENCE_MAX_TOKENS
+            max_tokens=INFERENCE_MAX_TOKENS,
         )
 
     except Exception as e:
         logger.error(f"Error analyzing {product} log: {e}")
         return f"Error analyzing log: {e}"
+
 
 def analyze_product_log(product, product_config, error_summary):
     """
@@ -101,6 +122,7 @@ def analyze_product_log(product, product_config, error_summary):
     :return: analysis result
     """
     return analyze_log(product, product_config, error_summary)
+
 
 def analyze_generic_log(product_config, error_summary):
     """

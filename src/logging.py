@@ -2,6 +2,7 @@
 
 import logging.config
 
+
 def configure_logging(log_level):
     """
     Configure application logging.
