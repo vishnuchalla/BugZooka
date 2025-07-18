@@ -73,6 +73,8 @@ def analyze_prow_artifacts(directory_path, job_name):
     with open(build_file_path, "r", errors="replace") as f:
         matched_line = next((line.strip()
                             for line in f if pattern.search(line)), None)
+        if matched_line is None:
+            matched_line = "Couldn't identify the failure step, likely a maintanence issue"
     cluster_operators_file_path = os.path.join(
         directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
