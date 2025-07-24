@@ -77,7 +77,7 @@ COPY --chown=appuser:appuser . .
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH="/app-packages:$PYTHONPATH"
-ENV PATH="/usr/lib/google-cloud-sdk/bin:$PATH"
+ENV PATH="/usr/lib/google-cloud-sdk/bin:/app-packages/bin:$PATH"
 
 # Switch to non-root user
 USER appuser
