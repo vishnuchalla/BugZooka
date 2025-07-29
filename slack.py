@@ -9,7 +9,7 @@ import time
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-from src.config import SLACK_BOT_TOKEN, SLACK_CHANNEL_ID, get_product_config
+from src.config import SLACK_BOT_TOKEN, SLACK_CHANNEL_ID, JEDI_BOT_SLACK_USER_ID, get_product_config
 from src.constants import (
     MAX_CONTEXT_SIZE,
     MAX_PREVIEW_CONTENT,
@@ -58,16 +58,19 @@ class SlackMessageFetcher:
             self.logger.debug(f"Checking message with timestamp: {ts}")
 
             replies = self.client.conversations_replies(channel=self.channel_id, ts=ts)
-            if (
-                self.last_seen_timestamp is None
-                or float(ts) > float(self.last_seen_timestamp)
-            ) and len(replies["messages"]) == 1:
-                new_messages.append(msg)
+            messages_in_thread = replies.get("messages", [])
+            bot_replied = any(
+                reply.get("user") == JEDI_BOT_SLACK_USER_ID for reply in messages_in_thread[1:]  # skip the parent msg at index 0
+            )
+            if self.last_seen_timestamp is None or float(ts) > float(self.last_seen_timestamp):
+                if bot_replied:
+                    self.logger.debug(f"Skipping message with timestamp {ts} due to bot replied")
+                else:
+                    new_messages.append(msg)
             else:
                 self.logger.debug(
-                    f"Skipping message with timestamp {ts}"
-                    f" due to timestamp filter or replies count"
-                )
+                    f"Skipping message with timestamp {ts} due to timestamp filter"
+                    )
         return new_messages
 
     def _send_error_logs_preview(self, errors_list, max_ts):
@@ -208,19 +211,24 @@ class SlackMessageFetcher:
                 self.logger.info("⏳ No new messages.")
                 return
 
+            max_ts = self.last_seen_timestamp or "0"
+
             try:
-                max_ts = self.last_seen_timestamp or "0"
-
                 for msg in new_messages:
-                    ts = self._process_message(msg, product, ci_system, product_config)
+                    ts = msg.get("ts")
 
-                    if float(ts) > float(max_ts):
+                    if ts and float(ts) > float(max_ts):
                         max_ts = ts
 
-                self.logger.info(
-                    f"Updating last_seen_timestamp from {self.last_seen_timestamp} to {max_ts}"
-                )
-                self.last_seen_timestamp = max_ts
+                    processed_ts = self._process_message(
+                        msg, product, ci_system, product_config
+                    )
+
+                    if processed_ts and float(processed_ts) > float(self.last_seen_timestamp or 0):
+                        self.logger.info(
+                            f"Updating last_seen_timestamp from {self.last_seen_timestamp} to {processed_ts}"
+                        )
+                        self.last_seen_timestamp = processed_ts
 
             except Exception as e:
                 self.logger.error(

@@ -17,6 +17,7 @@ load_dotenv()  # Load environment variables
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", None)
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", None)
+JEDI_BOT_SLACK_USER_ID = os.getenv("JEDI_BOT_SLACK_USER_ID", None)
 
 
 def get_product_config(product_name: str):
