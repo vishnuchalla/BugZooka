@@ -3,7 +3,14 @@ import os
 from dotenv import load_dotenv
 
 from src.prompts import GENERIC_APP_PROMPT
-from src.constants import GENERIC_INFERENCE_URL, GENERIC_MODEL
+from src.constants import (
+    GENERIC_INFERENCE_URL,
+    GENERIC_MODEL,
+    INFERENCE_API_RETRY_ATTEMPTS,
+    INFERENCE_API_RETRY_DELAY,
+    INFERENCE_API_RETRY_BACKOFF_MULTIPLIER,
+    INFERENCE_API_MAX_RETRY_DELAY,
+)
 
 
 load_dotenv()  # Load environment variables
@@ -55,4 +62,25 @@ def get_product_config(product_name: str):
         "token": INFERENCE_TOKENS,
         "model": INFERENCE_MODEL_MAP,
         "prompt": INFERENCE_PROMPT_MAP,
+        "retry": {
+            "max_attempts": int(
+                os.getenv(
+                    "INFERENCE_API_RETRY_MAX_ATTEMPTS", INFERENCE_API_RETRY_ATTEMPTS
+                )
+            ),
+            "delay": float(
+                os.getenv("INFERENCE_API_RETRY_DELAY", INFERENCE_API_RETRY_DELAY)
+            ),
+            "backoff": float(
+                os.getenv(
+                    "INFERENCE_API_RETRY_BACKOFF_MULTIPLIER",
+                    INFERENCE_API_RETRY_BACKOFF_MULTIPLIER,
+                )
+            ),
+            "max_delay": float(
+                os.getenv(
+                    "INFERENCE_API_RETRY_MAX_DELAY", INFERENCE_API_MAX_RETRY_DELAY
+                )
+            ),
+        },
     }
