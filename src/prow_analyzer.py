@@ -35,7 +35,7 @@ def get_cluster_operator_errors(directory_path):
                     each_dict["Status"] = condition["status"]
                     each_dict["Reason"] = condition["reason"]
                     each_dict["Message"] = condition["message"]
-                    condition["status"].append(each_dict)
+                    err_conditions.append(each_dict)
         return err_conditions
     except Exception as e:
         logger.error("Failed to fetch log file: %s", e)
