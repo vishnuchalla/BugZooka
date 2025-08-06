@@ -1,5 +1,9 @@
 # **BugZooka**
-Broadcasting issues and errors.
+BugZooka is a tool for log analysis and categorization based on static rules and 3rd party LLM integrations.
+Product specific LLM prompts are configured in [prompts.json](prompts.json), for generic and error summarization prompts see [prompts.py](src/prompts.py). Chat interactions and sessions are not retained.
+**Gen AI Notice:** users of this tool should not enter any personal information as LLM prompt input and always review generated responses for accuracy and relevance prior to using the information.
+
+#### High-Level Flow Diagram
 ![Flow Diagram](assets/flow_diagram.jpg)
 
 
