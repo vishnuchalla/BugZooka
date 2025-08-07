@@ -64,20 +64,21 @@ def analyze_prow_artifacts(directory_path, job_name):
 
     :param directory_path: directory path for the artifacts
     :param job_name: job name to base line with
-    :return: list of errors
+    :return: tuple of (list of errors, requires_llm, is_install_issue)
     """
     pattern = re.compile(r"Logs for container test in pod .*")
     build_file_path = os.path.join(directory_path, "build-log.txt")
     if not os.path.isfile(build_file_path):
         return [
             "Prow maintanence issues, couldn't even find the build-log.txt file"
-        ], False
+        ], False, True
     with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
         matched_line = next((line.strip() for line in f if pattern.search(line)), None)
         if matched_line is None:
             matched_line = (
                 "Couldn't identify the failure step, likely a maintanence issue"
             )
+            return [matched_line], False, True
     cluster_operators_file_path = os.path.join(directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
         with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
@@ -86,11 +87,11 @@ def analyze_prow_artifacts(directory_path, job_name):
             "\n Somehow couldn't find clusteroperators.json file",
             matched_line + "\n",
             "\n".join(build_log_content),
-        ], False
+        ], False, True
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
         orion_errors = scan_orion_xmls(directory_path)
         if len(orion_errors) == 0:
-            return [matched_line] + search_prow_errors(directory_path, job_name), True
-        return [matched_line + "\n"] + orion_errors, False
-    return [matched_line + "\n"] + cluster_operator_errors, False
+            return [matched_line] + search_prow_errors(directory_path, job_name), True, False
+        return [matched_line + "\n"] + orion_errors, False, False
+    return [matched_line + "\n"] + cluster_operator_errors, False, False

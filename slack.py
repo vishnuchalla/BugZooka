@@ -73,7 +73,7 @@ class SlackMessageFetcher:
                     )
         return new_messages
 
-    def _send_error_logs_preview(self, errors_list, max_ts):
+    def _send_error_logs_preview(self, errors_list, max_ts, is_install_issue=False):
         """Send error logs preview to Slack (either as message or file)."""
         errors_log_preview = "\n".join(errors_list or [])[:MAX_PREVIEW_CONTENT]
         errors_list_string = "\n".join(errors_list or [])[:MAX_CONTEXT_SIZE]
@@ -104,6 +104,22 @@ class SlackMessageFetcher:
             self.client.chat_postMessage(
                 channel=self.channel_id,
                 text="Error Logs Preview",
+                blocks=message_block,
+                thread_ts=max_ts,
+            )
+
+        if is_install_issue:
+            retrigger_message = (
+                "This appears to be an installation or maintenance issue. "
+                "Please re-trigger the run."
+            )
+            message_block = get_slack_message_blocks(
+                markdown_header=":repeat: *Re-trigger Suggested*\n",
+                preformatted_text=retrigger_message,
+            )
+            self.client.chat_postMessage(
+                channel=self.channel_id,
+                text="Re-trigger Suggested",
                 blocks=message_block,
                 thread_ts=max_ts,
             )
@@ -152,12 +168,16 @@ class SlackMessageFetcher:
             return ts
 
         # Extract and download logs
-        errors_list, requires_llm = download_and_analyze_logs(text, ci_system)
+        errors_list, requires_llm, is_install_issue = download_and_analyze_logs(text, ci_system)
         if errors_list is None:
             return ts
 
         # Send error logs preview first
-        self._send_error_logs_preview(errors_list, ts)
+        self._send_error_logs_preview(errors_list, ts, is_install_issue)
+
+        # For installation issues, only send preview and re-trigger suggestion
+        if is_install_issue:
+            return ts
 
         try:
             # Process with LLM
