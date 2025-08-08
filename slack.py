@@ -155,7 +155,7 @@ class SlackMessageFetcher:
             thread_ts=max_ts,
         )
 
-    def _process_message(self, msg, product, ci_system, product_config):
+    def _process_message(self, msg, product, ci_system, product_config, enable_inference):
         """Process a single message through the complete pipeline."""
         user = msg.get("user", "Unknown")
         text = msg.get("text", "No text available")
@@ -175,8 +175,7 @@ class SlackMessageFetcher:
         # Send error logs preview first
         self._send_error_logs_preview(errors_list, ts, is_install_issue)
 
-        # For installation issues, only send preview and re-trigger suggestion
-        if is_install_issue:
+        if is_install_issue or not enable_inference:
             return ts
 
         try:
@@ -212,6 +211,7 @@ class SlackMessageFetcher:
             product = kwargs["product"]
             ci_system = kwargs["ci"]
             product_config = kwargs["product_config"]
+            enable_inference = kwargs["enable_inference"]
 
             params = {"channel": self.channel_id, "limit": 1}
             if self.last_seen_timestamp:
@@ -241,7 +241,7 @@ class SlackMessageFetcher:
                         max_ts = ts
 
                     processed_ts = self._process_message(
-                        msg, product, ci_system, product_config
+                        msg, product, ci_system, product_config, enable_inference
                     )
 
                     if processed_ts and float(processed_ts) > float(self.last_seen_timestamp or 0):
@@ -289,6 +289,11 @@ class SlackMessageFetcher:
         sys.exit(0)
 
 
+def str_to_bool(value):
+    """Convert string ENV value to bool."""
+    return str(value).lower() == "true"
+
+
 # export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 if __name__ == "__main__":
     VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -311,6 +316,12 @@ if __name__ == "__main__":
         help="Logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL)."
         " Can also be set via LOG_LEVEL env var",
     )
+    parser.add_argument(
+        "--enable-inference",
+        action="store_true",
+        default=str_to_bool(os.environ.get("ENABLE_INFERENCE", "false")),
+        help="Enable inference mode. Can also be set via ENABLE_INFERENCE env var (true/false).",
+    )
 
     args = parser.parse_args()
     configure_logging(args.log_level)
@@ -328,6 +339,7 @@ if __name__ == "__main__":
         "product": args.product.upper(),
         "ci": args.ci.upper(),
         "product_config": get_product_config(product_name=args.product.upper()),
+        "enable_inference": args.enable_inference,
     }
 
     fetcher = SlackMessageFetcher(
