@@ -49,6 +49,7 @@ def list_gcs_files(gcs_path):
     command = f"gsutil ls {gcs_path}"
     return run_shell_command(command)
 
+
 def extract_prow_test_phase(case_name):
     """
     Identifies the prow test phase.
