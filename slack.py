@@ -99,7 +99,7 @@ class SlackMessageFetcher:
             self.logger.info("📤 Trying to just send the preview message")
             message_block = get_slack_message_blocks(
                 markdown_header=f":checking: *Error Logs Preview ({categorization_message})*\n",
-                preformatted_text=f"{errors_log_preview.strip()}",
+                content_text=f"{errors_log_preview.strip()}",
             )
             self.client.chat_postMessage(
                 channel=self.channel_id,
@@ -115,7 +115,7 @@ class SlackMessageFetcher:
             )
             message_block = get_slack_message_blocks(
                 markdown_header=":repeat: *Re-trigger Suggested*\n",
-                preformatted_text=retrigger_message,
+                content_text=retrigger_message,
             )
             self.client.chat_postMessage(
                 channel=self.channel_id,
@@ -128,7 +128,8 @@ class SlackMessageFetcher:
         """Send the final analysis result to Slack."""
         message_block = get_slack_message_blocks(
             markdown_header=":fast_forward: *Implications to understand (AI generated) *\n",
-            preformatted_text=response,
+            content_text=response,
+            use_markdown=True,
         )
         self.logger.info("Posting analysis summary to Slack")
         self.client.chat_postMessage(
@@ -146,7 +147,7 @@ class SlackMessageFetcher:
         )
         message_block = get_slack_message_blocks(
             markdown_header=":warning: *Analysis Unavailable*\n",
-            preformatted_text=fallback_message,
+            content_text=fallback_message,
         )
         self.client.chat_postMessage(
             channel=self.channel_id,

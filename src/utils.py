@@ -156,25 +156,33 @@ def filter_most_frequent_errors(full_errors, frequent_errors):
     return top_errors_from_full
 
 
-def get_slack_message_blocks(markdown_header, preformatted_text):
+def get_slack_message_blocks(markdown_header, content_text, use_markdown=False):
     """
     Prepares a slack message building blocks
 
     :param markdown_header: markdown header to be displayed
-    :param preformatted_text: preformatted text message
+    :param content_text: text message content (preformatted or markdown)
+    :param use_markdown: if True, render content as markdown; if False, use preformatted text
     :return: a sanitized version of text blocks
     """
-    return [
-        {"type": "section", "text": {"type": "mrkdwn", "text": markdown_header}},
-        {
+    header_block = {"type": "section", "text": {"type": "mrkdwn", "text": markdown_header}}
+    
+    if use_markdown:
+        content_block = {
+            "type": "markdown",
+            "text": content_text.strip(),
+        }
+    else:
+        content_block = {
             "type": "rich_text",
             "block_id": "error_logs_block",
             "elements": [
                 {
                     "type": "rich_text_preformatted",
-                    "elements": [{"type": "text", "text": preformatted_text.strip()}],
+                    "elements": [{"type": "text", "text": content_text.strip()}],
                     "border": 0,
                 }
             ],
-        },
-    ]
+        }
+    
+    return [header_block, content_block]
