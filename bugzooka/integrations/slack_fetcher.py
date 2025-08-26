@@ -210,9 +210,12 @@ class SlackMessageFetcher:
             return ts
 
         # Extract and download logs
-        errors_list, categorization_message, requires_llm, is_install_issue = (
-            download_and_analyze_logs(text, ci_system)
-        )
+        (
+            errors_list,
+            categorization_message,
+            requires_llm,
+            is_install_issue,
+        ) = download_and_analyze_logs(text, ci_system)
         if errors_list is None:
             return ts
 
