@@ -159,7 +159,7 @@ def get_logjuicer_extract(directory_path, job_name):
     :return: a list of errors
     """
     file_path = os.path.join(directory_path, f"{job_name}.txt")
-    url = f"https://raw.githubusercontent.com/vishnuchalla/ocp-qe-prow-build-logs/main/{job_name}.txt"
+    url = f"https://raw.githubusercontent.com/redhat-performance/ocp-qe-prow-build-logs/main/{job_name}.txt"
 
     try:
         logger.info("Attempting to download log file from: %s", url)
