@@ -43,6 +43,12 @@ def main() -> None:
         default=str_to_bool(os.environ.get("ENABLE_INFERENCE", "false")),
         help="Enable inference mode. Can also be set via ENABLE_INFERENCE env var (true/false).",
     )
+    parser.add_argument(
+        "--weekly-summary",
+        action="store_true",
+        default=str_to_bool(os.environ.get("WEEKLY_SUMMARY", "false")),
+        help="If set, computes and posts a weekly failure summary instead of continuous monitoring.",
+    )
 
     args = parser.parse_args()
     configure_logging(args.log_level)
@@ -67,7 +73,10 @@ def main() -> None:
     fetcher = SlackMessageFetcher(
         channel_id=SLACK_CHANNEL_ID, logger=logger, poll_interval=SLACK_POLL_INTERVAL
     )
-    fetcher.run(**kwargs)
+    if args.weekly_summary:
+        fetcher.post_weekly_summary(**kwargs)
+    else:
+        fetcher.run(**kwargs)
 
 
 if __name__ == "__main__":

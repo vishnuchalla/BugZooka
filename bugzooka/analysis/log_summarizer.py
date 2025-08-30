@@ -309,3 +309,60 @@ def generate_prompt(error_list):
         {"role": "assistant", "content": ERROR_SUMMARIZATION_PROMPT["assistant"]},
     ]
     return messages
+
+
+def classify_failure_type(errors_list, categorization_message, is_install_issue):
+    """
+    Map analysis outputs to a display label for failure type.
+    """
+    try:
+        if is_install_issue:
+            return "Install"
+
+        cat = (categorization_message or "").lower()
+        if "maintenance issue" in cat:
+            return "Maintenance"
+        if "change point" in cat:
+            return "Changepoint"
+        if "workload" in cat or "openshift-qe" in cat:
+            return "Workload"
+        if "must gather" in cat:
+            return "Must Gather"
+        if "provision" in cat and "deprovision" not in cat:
+            return "Provision"
+        if "deprovision" in cat:
+            return "Deprovision"
+        if "upgrade" in cat:
+            return "Upgrade"
+        if "node" in cat and "readiness" in cat:
+            return "Node Readiness"
+
+        # Heuristic: cluster operator errors indicate install/bring-up
+        if any('"Name"' in e and '"Reason"' in e for e in (errors_list or [])):
+            return "Install"
+
+        if cat.strip():
+            return "Prow Other"
+        return "Unknown"
+    except Exception:
+        return "Unknown"
+
+
+def render_failure_breakdown(counts, total_jobs, total_failures):
+    """
+    Build a markdown summary from counts using the labels returned by classifier.
+    """
+    if total_jobs == 0:
+        return "No job messages found in the selected period."
+
+    failure_rate = (total_failures / total_jobs) * 100.0 if total_jobs else 0
+    lines = [
+        f"• **Total Jobs:** {total_jobs}",
+        f"• **Failures:** {total_failures} _({failure_rate:.0f}% failure rate)_",
+        "",
+        ":construction: **Breakdown by type:**",
+    ]
+    for ftype, count in sorted(counts.items(), key=lambda x: -x[1]):
+        pct = (count / total_failures) * 100 if total_failures else 0
+        lines.append(f"• **{ftype}** — {count} _({pct:.0f}% )_")
+    return "\n".join(lines)
