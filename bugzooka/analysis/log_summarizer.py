@@ -316,12 +316,11 @@ def classify_failure_type(errors_list, categorization_message, is_install_issue)
     Map analysis outputs to a display label for failure type.
     """
     try:
-        if is_install_issue:
-            return "Install"
-
         cat = (categorization_message or "").lower()
         if "maintenance issue" in cat:
             return "Maintenance"
+        if is_install_issue:
+            return "Install"
         if "change point" in cat:
             return "Changepoint"
         if "workload" in cat or "openshift-qe" in cat:

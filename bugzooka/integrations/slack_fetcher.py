@@ -2,6 +2,7 @@ import io
 import signal
 import sys
 import time
+import re
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -276,49 +277,6 @@ class SlackMessageFetcher:
 
         return total_jobs, total_failures, counts
 
-    def post_weekly_summary(self, **kwargs):
-        """
-        Fetch messages from the last 20 minutes (or 7 days), aggregate failures by type,
-        and post a summary to Slack.
-        """
-        try:
-            product = kwargs["product"]
-            ci_system = kwargs["ci"]
-            product_config = kwargs["product_config"]
-            thread_ts: Optional[str] = kwargs.get("thread_ts")
-
-            now = time.time()
-            # Use configurable lookback window
-            oldest = f"{now - SUMMARY_LOOKBACK_SECONDS:.6f}"
-            latest = f"{now:.6f}"
-
-            total_jobs, total_failures, counts = self._summarize_messages_in_range(
-                oldest_ts=oldest,
-                latest_ts=latest,
-                product=product,
-                ci_system=ci_system,
-                product_config=product_config,
-            )
-            summary_text = render_failure_breakdown(counts, total_jobs, total_failures)
-
-            message_block = self._get_slack_message_blocks(
-                markdown_header=":bar_chart: *Failure Summary*\n",
-                content_text=summary_text,
-                use_markdown=True,  # force markdown formatting
-            )
-
-            self.client.chat_postMessage(
-                channel=self.channel_id,
-                text="Failure Summary",
-                blocks=message_block,
-                thread_ts=thread_ts,
-            )
-
-        except SlackApiError as e:
-            self.logger.error(f"❌ Slack API Error (summary): {e.response['error']}")
-        except Exception as e:
-            self.logger.error(f"⚠️ Unexpected Error in summary: {str(e)}")
-
     def _process_message(
         self, msg, product, ci_system, product_config, enable_inference
     ):
@@ -329,16 +287,23 @@ class SlackMessageFetcher:
 
         self.logger.info(f"📩 New message from {user}: {text} at ts {ts}")
 
-        # Weekly summary trigger
-        if "weekly report" in text.lower():
-            self.logger.info("Triggering weekly summary on demand")
-            self.post_weekly_summary(
+        # Dynamic summarize trigger: summarize <time> (e.g., 20m, 1h, 2d)
+        m = re.search(r"\b(?:summarise|summarize)\b\s+(\d+)([mhd])", text.lower())
+        if m:
+            value, unit = m.group(1), m.group(2)
+            factor = {"m": 60, "h": 3600, "d": 86400}[unit]
+            lookback = int(value) * factor
+            self.logger.info("Triggering time summary on demand for %s%s", value, unit)
+            self.post_time_summary(
                 product=product,
                 ci=ci_system,
                 product_config=product_config,
                 thread_ts=ts,
+                lookback_seconds=lookback,
             )
             return ts
+
+        # No weekly trigger; dynamic summarize only
 
         if "failure" not in text.lower():
             self.logger.info("Not a failure job, skipping")
@@ -449,6 +414,50 @@ class SlackMessageFetcher:
             self.logger.error(f"❌ Slack API Error: {e.response['error']}")
         except Exception as e:
             self.logger.error(f"⚠️ Unexpected Error: {str(e)}")
+
+    def post_time_summary(self, **kwargs):
+        """
+        Fetch messages from the last lookback_seconds, aggregate failures by type, and post a summary.
+        """
+        try:
+            product = kwargs["product"]
+            ci_system = kwargs["ci"]
+            product_config = kwargs["product_config"]
+            thread_ts: Optional[str] = kwargs.get("thread_ts")
+            lookback_seconds: int = kwargs.get(
+                "lookback_seconds", SUMMARY_LOOKBACK_SECONDS
+            )
+
+            now = time.time()
+            oldest = f"{now - lookback_seconds:.6f}"
+            latest = f"{now:.6f}"
+
+            total_jobs, total_failures, counts = self._summarize_messages_in_range(
+                oldest_ts=oldest,
+                latest_ts=latest,
+                product=product,
+                ci_system=ci_system,
+                product_config=product_config,
+            )
+
+            summary_text = render_failure_breakdown(counts, total_jobs, total_failures)
+
+            message_block = self._get_slack_message_blocks(
+                markdown_header=":bar_chart: *Failure Summary*\n",
+                content_text=summary_text,
+                use_markdown=True,
+            )
+
+            self.client.chat_postMessage(
+                channel=self.channel_id,
+                text="Failure Summary",
+                blocks=message_block,
+                thread_ts=thread_ts,
+            )
+        except SlackApiError as e:
+            self.logger.error(f"❌ Slack API Error (summary): {e.response['error']}")
+        except Exception as e:
+            self.logger.error(f"⚠️ Unexpected Error in summary: {str(e)}")
 
     def run(self, **kwargs):
         """
