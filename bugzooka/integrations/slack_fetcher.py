@@ -209,7 +209,7 @@ class SlackMessageFetcher:
         product: str,
         ci_system: str,
         product_config,
-    ) -> Tuple[int, int, Dict[str, int]]:
+    ) -> Tuple[int, int, Dict[str, int], Dict[str, int]]:
         """
         Iterate Slack history over [oldest_ts, latest_ts], analyze failures, and aggregate counts.
         Returns (total_jobs, total_failures, counts_by_type)
@@ -217,6 +217,7 @@ class SlackMessageFetcher:
         total_jobs = 0
         total_failures = 0
         counts: Dict[str, int] = {}
+        version_counts: Dict[str, int] = {}
 
         cursor = None
         current_latest: Optional[str] = latest_ts
@@ -253,6 +254,11 @@ class SlackMessageFetcher:
                 # Robust failure detection (case-insensitive, tolerate punctuation/emojis)
                 if "ended with" in text_lower and "failure" in text_lower:
                     total_failures += 1
+                    # Extract OpenShift version like 4.19, 4.20, etc., if present
+                    vm = re.search(r"\b4\.\d{1,2}\b", text_lower)
+                    if vm:
+                        v = vm.group(0)
+                        version_counts[v] = version_counts.get(v, 0) + 1
                     analysis = download_and_analyze_logs(text, ci_system)
                     (
                         errors_list,
@@ -275,7 +281,7 @@ class SlackMessageFetcher:
             if not cursor:
                 break
 
-        return total_jobs, total_failures, counts
+        return total_jobs, total_failures, counts, version_counts
 
     def _process_message(
         self, msg, product, ci_system, product_config, enable_inference
@@ -432,7 +438,12 @@ class SlackMessageFetcher:
             oldest = f"{now - lookback_seconds:.6f}"
             latest = f"{now:.6f}"
 
-            total_jobs, total_failures, counts = self._summarize_messages_in_range(
+            (
+                total_jobs,
+                total_failures,
+                counts,
+                version_counts,
+            ) = self._summarize_messages_in_range(
                 oldest_ts=oldest,
                 latest_ts=latest,
                 product=product,
@@ -440,17 +451,19 @@ class SlackMessageFetcher:
                 product_config=product_config,
             )
 
-            summary_text = render_failure_breakdown(counts, total_jobs, total_failures)
+            summary_text = render_failure_breakdown(
+                counts, total_jobs, total_failures, version_counts=version_counts
+            )
 
             message_block = self._get_slack_message_blocks(
-                markdown_header=":bar_chart: *Failure Summary*\n",
+                markdown_header=":star: *Summary* :star:\n",
                 content_text=summary_text,
                 use_markdown=True,
             )
 
             self.client.chat_postMessage(
                 channel=self.channel_id,
-                text="Failure Summary",
+                text="Summary",
                 blocks=message_block,
                 thread_ts=thread_ts,
             )

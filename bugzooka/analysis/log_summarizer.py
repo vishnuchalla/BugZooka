@@ -347,9 +347,9 @@ def classify_failure_type(errors_list, categorization_message, is_install_issue)
         return "Unknown"
 
 
-def render_failure_breakdown(counts, total_jobs, total_failures):
+def render_failure_breakdown(counts, total_jobs, total_failures, version_counts=None):
     """
-    Build a markdown summary from counts using the labels returned by classifier.
+    Build a polished markdown summary from counts using the labels returned by classifier.
     """
     if total_jobs == 0:
         return "No job messages found in the selected period."
@@ -359,9 +359,31 @@ def render_failure_breakdown(counts, total_jobs, total_failures):
         f"• **Total Jobs:** {total_jobs}",
         f"• **Failures:** {total_failures} _({failure_rate:.0f}% failure rate)_",
         "",
-        ":construction: **Breakdown by type:**",
+        "\n :construction: **Failure Breakdown by the type of Issue:**",
     ]
+
+    # Failure type breakdown
     for ftype, count in sorted(counts.items(), key=lambda x: -x[1]):
         pct = (count / total_failures) * 100 if total_failures else 0
         lines.append(f"• **{ftype}** — {count} _({pct:.0f}% )_")
+
+    # Openshift version breakdown
+    if version_counts:
+        lines.append("")
+        lines.append(":label: **Failure Breakdown by OpenShift Version:**")
+
+        # Sort versions numerically by major.minor
+        def _version_key(v):
+            try:
+                major, minor = v.split(".")
+                return (int(major), int(minor))
+            except Exception:
+                return (0, 0)
+
+        for version, count in sorted(
+            version_counts.items(), key=lambda x: _version_key(x[0]), reverse=True
+        ):
+            pct = (count / total_failures) * 100 if total_failures else 0
+            lines.append(f"• **{version}** — {count} _({pct:.0f}% )_")
+
     return "\n".join(lines)

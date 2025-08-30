@@ -55,7 +55,14 @@ def scan_orion_xmls(directory_path):
     base_dir = Path(f"{directory_path}/orion")
     xml_files = base_dir.glob("*.xml")
     for xml_file in xml_files:
-        xml_content = summarize_orion_xml(xml_file)
+        try:
+            xml_content = summarize_orion_xml(xml_file)
+        except ImportError as e:
+            logger.error("Orion XML parsing unavailable: %s", e)
+            return []
+        except Exception as e:
+            logger.error("Failed to summarize Orion XML '%s': %s", xml_file, e)
+            continue
         if xml_content != "":
             return [xml_content]
     return []
@@ -125,9 +132,20 @@ def analyze_prow_artifacts(directory_path, job_name):
             return [matched_line], MAINTENANCE_ISSUE, False, True
     junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
     if os.path.isfile(junit_operator_file_path):
-        step_phase, step_name, step_summary = summarize_junit_operator_xml(
-            junit_operator_file_path
-        )
+        try:
+            step_phase, step_name, step_summary = summarize_junit_operator_xml(
+                junit_operator_file_path
+            )
+        except ImportError as e:
+            logger.error("JUnit operator XML parsing unavailable: %s", e)
+            step_phase, step_name, step_summary = None, None, ""
+        except Exception as e:
+            logger.error(
+                "Failed to parse junit_operator.xml '%s': %s",
+                junit_operator_file_path,
+                e,
+            )
+            step_phase, step_name, step_summary = None, None, ""
         if step_name and step_phase:
             categorization_message = categorize_prow_failure(step_name, step_phase)
         else:
