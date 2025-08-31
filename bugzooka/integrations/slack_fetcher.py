@@ -29,7 +29,7 @@ from bugzooka.integrations.inference import (
     InferenceAPIUnavailableError,
     AgentAnalysisLimitExceededError,
 )
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 
 
 class SlackMessageFetcher:
@@ -209,7 +209,14 @@ class SlackMessageFetcher:
         product: str,
         ci_system: str,
         product_config,
-    ) -> Tuple[int, int, Dict[str, int], Dict[str, int]]:
+    ) -> Tuple[
+        int,
+        int,
+        Dict[str, int],
+        Dict[str, int],
+        Dict[str, List[str]],
+        Dict[str, List[str]],
+    ]:
         """
         Iterate Slack history over [oldest_ts, latest_ts], analyze failures, and aggregate counts.
         Returns (total_jobs, total_failures, counts_by_type)
@@ -218,6 +225,8 @@ class SlackMessageFetcher:
         total_failures = 0
         counts: Dict[str, int] = {}
         version_counts: Dict[str, int] = {}
+        messages_by_type: Dict[str, List[str]] = {}
+        messages_by_version: Dict[str, List[str]] = {}
 
         cursor = None
         current_latest: Optional[str] = latest_ts
@@ -259,6 +268,7 @@ class SlackMessageFetcher:
                     if vm:
                         v = vm.group(0)
                         version_counts[v] = version_counts.get(v, 0) + 1
+                        messages_by_version.setdefault(v, []).append(text)
                     analysis = download_and_analyze_logs(text, ci_system)
                     (
                         errors_list,
@@ -274,6 +284,7 @@ class SlackMessageFetcher:
                         )
 
                     counts[category] = counts.get(category, 0) + 1
+                    messages_by_type.setdefault(category, []).append(text)
 
             if not response.get("has_more"):
                 break
@@ -281,7 +292,14 @@ class SlackMessageFetcher:
             if not cursor:
                 break
 
-        return total_jobs, total_failures, counts, version_counts
+        return (
+            total_jobs,
+            total_failures,
+            counts,
+            version_counts,
+            messages_by_type,
+            messages_by_version,
+        )
 
     def _process_message(
         self, msg, product, ci_system, product_config, enable_inference
@@ -290,15 +308,17 @@ class SlackMessageFetcher:
         user = msg.get("user", "Unknown")
         text = msg.get("text", "No text available")
         ts = msg.get("ts")
+        text_lower = text.lower()
 
         self.logger.info(f"📩 New message from {user}: {text} at ts {ts}")
 
         # Dynamic summarize trigger: summarize <time> (e.g., 20m, 1h, 2d)
-        m = re.search(r"\b(?:summarise|summarize)\b\s+(\d+)([mhd])", text.lower())
+        m = re.search(r"\b(?:summarise|summarize)\b\s+(\d+)([mhd])", text_lower)
         if m:
             value, unit = m.group(1), m.group(2)
             factor = {"m": 60, "h": 3600, "d": 86400}[unit]
             lookback = int(value) * factor
+            verbose = "verbose" in text_lower
             self.logger.info("Triggering time summary on demand for %s%s", value, unit)
             self.post_time_summary(
                 product=product,
@@ -306,12 +326,13 @@ class SlackMessageFetcher:
                 product_config=product_config,
                 thread_ts=ts,
                 lookback_seconds=lookback,
+                verbose=verbose,
             )
             return ts
 
         # No weekly trigger; dynamic summarize only
 
-        if "failure" not in text.lower():
+        if "failure" not in text_lower:
             self.logger.info("Not a failure job, skipping")
             return ts
 
@@ -433,6 +454,7 @@ class SlackMessageFetcher:
             lookback_seconds: int = kwargs.get(
                 "lookback_seconds", SUMMARY_LOOKBACK_SECONDS
             )
+            verbose: bool = kwargs.get("verbose", False)
 
             now = time.time()
             oldest = f"{now - lookback_seconds:.6f}"
@@ -443,6 +465,8 @@ class SlackMessageFetcher:
                 total_failures,
                 counts,
                 version_counts,
+                messages_by_type,
+                messages_by_version,
             ) = self._summarize_messages_in_range(
                 oldest_ts=oldest,
                 latest_ts=latest,
@@ -452,7 +476,12 @@ class SlackMessageFetcher:
             )
 
             summary_text = render_failure_breakdown(
-                counts, total_jobs, total_failures, version_counts=version_counts
+                counts,
+                total_jobs,
+                total_failures,
+                version_counts=version_counts,
+                messages_by_type=messages_by_type if verbose else None,
+                messages_by_version=messages_by_version if verbose else None,
             )
 
             message_block = self._get_slack_message_blocks(

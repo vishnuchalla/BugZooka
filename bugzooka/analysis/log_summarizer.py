@@ -347,30 +347,52 @@ def classify_failure_type(errors_list, categorization_message, is_install_issue)
         return "Unknown"
 
 
-def render_failure_breakdown(counts, total_jobs, total_failures, version_counts=None):
+def render_failure_breakdown(
+    counts,
+    total_jobs,
+    total_failures,
+    version_counts=None,
+    messages_by_type=None,
+    messages_by_version=None,
+):
     """
     Build a polished markdown summary from counts using the labels returned by classifier.
     """
     if total_jobs == 0:
         return "No job messages found in the selected period."
 
+    separator = "----------------------------------------"
+    mini_separator = "---"
+
     failure_rate = (total_failures / total_jobs) * 100.0 if total_jobs else 0
     lines = [
         f"• **Total Jobs:** {total_jobs}",
         f"• **Failures:** {total_failures} _({failure_rate:.0f}% failure rate)_",
         "",
-        "\n :construction: **Failure Breakdown by the type of Issue:**",
+        separator,
+        "",
+        ":construction: **Failure Breakdown by the type of Issue:**",
+        "",
     ]
 
     # Failure type breakdown
-    for ftype, count in sorted(counts.items(), key=lambda x: -x[1]):
+    sorted_types = sorted(counts.items(), key=lambda x: -x[1])
+    for idx, (ftype, count) in enumerate(sorted_types):
         pct = (count / total_failures) * 100 if total_failures else 0
         lines.append(f"• **{ftype}** — {count} _({pct:.0f}% )_")
+        if messages_by_type and ftype in messages_by_type:
+            for msg in messages_by_type.get(ftype, [])[:10]:
+                lines.append(f"    {msg}")
+        lines.append(f"   {mini_separator}")
 
+    lines.append("")
     # Openshift version breakdown
     if version_counts:
         lines.append("")
+        lines.append(separator)
+        lines.append("")
         lines.append(":label: **Failure Breakdown by OpenShift Version:**")
+        lines.append("")
 
         # Sort versions numerically by major.minor
         def _version_key(v):
@@ -380,10 +402,15 @@ def render_failure_breakdown(counts, total_jobs, total_failures, version_counts=
             except Exception:
                 return (0, 0)
 
-        for version, count in sorted(
+        sorted_versions = sorted(
             version_counts.items(), key=lambda x: _version_key(x[0]), reverse=True
-        ):
+        )
+        for idx, (version, count) in enumerate(sorted_versions):
             pct = (count / total_failures) * 100 if total_failures else 0
             lines.append(f"• **{version}** — {count} _({pct:.0f}% )_")
+            if messages_by_version and version in messages_by_version:
+                for msg in messages_by_version.get(version, [])[:10]:
+                    lines.append(f"    {msg}")
+            lines.append(f"   {mini_separator}")
 
     return "\n".join(lines)
