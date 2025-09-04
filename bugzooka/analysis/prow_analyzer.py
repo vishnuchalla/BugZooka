@@ -58,10 +58,10 @@ def scan_orion_xmls(directory_path):
         try:
             xml_content = summarize_orion_xml(xml_file)
         except ImportError as e:
-            logger.error("Orion XML parsing unavailable: %s", e)
+            logger.warning("Orion XML parsing unavailable: %s", e)
             return []
         except Exception as e:
-            logger.error("Failed to summarize Orion XML '%s': %s", xml_file, e)
+            logger.warning("Failed to summarize Orion XML '%s': %s", xml_file, e)
             continue
         if xml_content != "":
             return [xml_content]
@@ -131,21 +131,21 @@ def analyze_prow_artifacts(directory_path, job_name):
             )
             return [matched_line], MAINTENANCE_ISSUE, False, True
     junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
+    # Defaults in case XML parsing yields no values
+    step_phase, step_name, step_summary = None, None, ""
     if os.path.isfile(junit_operator_file_path):
         try:
             step_phase, step_name, step_summary = summarize_junit_operator_xml(
                 junit_operator_file_path
             )
         except ImportError as e:
-            logger.error("JUnit operator XML parsing unavailable: %s", e)
-            step_phase, step_name, step_summary = None, None, ""
+            logger.warning("JUnit operator XML parsing unavailable: %s", e)
         except Exception as e:
-            logger.error(
+            logger.warning(
                 "Failed to parse junit_operator.xml '%s': %s",
                 junit_operator_file_path,
                 e,
             )
-            step_phase, step_name, step_summary = None, None, ""
         if step_name and step_phase:
             categorization_message = categorize_prow_failure(step_name, step_phase)
         else:
@@ -159,7 +159,7 @@ def analyze_prow_artifacts(directory_path, job_name):
             [
                 "\n Somehow couldn't find clusteroperators.json file",
                 matched_line + "\n",
-                step_summary + "\n".join(build_log_content),
+                (step_summary or "") + "\n".join(build_log_content),
             ],
             categorization_message,
             False,
@@ -171,7 +171,7 @@ def analyze_prow_artifacts(directory_path, job_name):
         if len(orion_errors) == 0:
             return (
                 [matched_line]
-                + [step_summary]
+                + [step_summary or ""]
                 + search_prow_errors(directory_path, job_name),
                 categorization_message,
                 True,
