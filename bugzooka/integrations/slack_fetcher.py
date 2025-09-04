@@ -214,8 +214,6 @@ class SlackMessageFetcher:
         int,
         Dict[str, int],
         Dict[str, int],
-        Dict[str, List[str]],
-        Dict[str, List[str]],
         Dict[str, Dict[str, int]],
         Dict[str, Dict[str, List[str]]],
     ]:
@@ -227,8 +225,6 @@ class SlackMessageFetcher:
         total_failures = 0
         counts: Dict[str, int] = {}
         version_counts: Dict[str, int] = {}
-        messages_by_type: Dict[str, List[str]] = {}
-        messages_by_version: Dict[str, List[str]] = {}
         version_type_counts: Dict[str, Dict[str, int]] = {}
         version_type_messages: Dict[str, Dict[str, List[str]]] = {}
 
@@ -272,7 +268,6 @@ class SlackMessageFetcher:
                     v = vm.group(0) if vm else None
                     if v:
                         version_counts[v] = version_counts.get(v, 0) + 1
-                        messages_by_version.setdefault(v, []).append(text)
                     analysis = download_and_analyze_logs(text, ci_system)
                     (
                         errors_list,
@@ -288,7 +283,6 @@ class SlackMessageFetcher:
                         )
 
                     counts[category] = counts.get(category, 0) + 1
-                    messages_by_type.setdefault(category, []).append(text)
                     if v:
                         version_type_counts.setdefault(v, {})[category] = (
                             version_type_counts.setdefault(v, {}).get(category, 0) + 1
@@ -308,8 +302,6 @@ class SlackMessageFetcher:
             total_failures,
             counts,
             version_counts,
-            messages_by_type,
-            messages_by_version,
             version_type_counts,
             version_type_messages,
         )
@@ -478,8 +470,6 @@ class SlackMessageFetcher:
                 total_failures,
                 counts,
                 version_counts,
-                messages_by_type,
-                messages_by_version,
                 version_type_counts,
                 version_type_messages,
             ) = self._summarize_messages_in_range(
@@ -495,8 +485,6 @@ class SlackMessageFetcher:
                 total_jobs,
                 total_failures,
                 version_counts=version_counts,
-                messages_by_type=messages_by_type if verbose else None,
-                messages_by_version=messages_by_version if verbose else None,
                 version_type_counts=version_type_counts,
                 version_type_messages=version_type_messages if verbose else None,
             )

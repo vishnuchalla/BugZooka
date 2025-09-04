@@ -341,8 +341,6 @@ def render_failure_breakdown(
     total_jobs,
     total_failures,
     version_counts=None,
-    messages_by_type=None,
-    messages_by_version=None,
     version_type_counts=None,
     version_type_messages=None,
 ):
@@ -371,11 +369,6 @@ def render_failure_breakdown(
     for idx, (ftype, count) in enumerate(sorted_types):
         pct = (count / total_failures) * 100 if total_failures else 0
         lines.append(f"• **{ftype}** — {count} _({pct:.0f}% )_")
-        if messages_by_type and ftype in messages_by_type:
-            for i, msg in enumerate(messages_by_type.get(ftype, [])[:10], start=1):
-                lines.append(f"    {i}. {msg}")
-        if idx < len(sorted_types) - 1:
-            lines.append(f"   {mini_separator}")
 
     lines.append("")
     # Openshift version breakdown
