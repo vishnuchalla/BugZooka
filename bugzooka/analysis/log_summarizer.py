@@ -7,6 +7,7 @@ import requests
 
 from bugzooka.core.constants import MAX_CONTEXT_SIZE
 from bugzooka.analysis.prompts import ERROR_SUMMARIZATION_PROMPT
+from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.core.utils import (
     download_file_from_gcs,
     filter_most_frequent_errors,
@@ -315,28 +316,16 @@ def classify_failure_type(errors_list, categorization_message, is_install_issue)
     """
     Map analysis outputs to a display label for failure type.
     """
+    cat = (categorization_message or "").lower()
     try:
-        cat = (categorization_message or "").lower()
-        if "maintenance issue" in cat:
-            return "Maintenance"
+        for keyword, (label, _) in FAILURE_KEYWORDS.items():
+            if keyword in cat:
+                return label
+
         if is_install_issue:
             return "Install"
-        if "change point" in cat:
-            return "Changepoint"
-        if "workload" in cat or "openshift-qe" in cat:
-            return "Workload"
-        if "must gather" in cat:
-            return "Must Gather"
-        if "provision" in cat and "deprovision" not in cat:
-            return "Provision"
-        if "deprovision" in cat:
-            return "Deprovision"
-        if "upgrade" in cat:
-            return "Upgrade"
-        if "node" in cat and "readiness" in cat:
-            return "Node Readiness"
 
-        # Heuristic: cluster operator errors indicate install/bring-up
+        # Heuristic
         if any('"Name"' in e and '"Reason"' in e for e in (errors_list or [])):
             return "Install"
 

@@ -5,6 +5,7 @@ import re
 from collections import deque
 from pathlib import Path
 from bugzooka.core.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
+from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.analysis.log_summarizer import search_prow_errors
 from bugzooka.analysis.xmlparser import (
     summarize_orion_xml,
@@ -76,18 +77,9 @@ def categorize_prow_failure(step_name, step_phase):
     :param step_phase: step phase
     :return: categorized preview tag message
     """
-    failure_map = {
-        "provision": "provision failure",
-        "deprovision": "deprovision failure",
-        "gather": "must gather failure",
-        "orion": "change point detection failure",
-        "cerberus": "cerberus health check failure",
-        "node-readiness": "nodes readiness check failure",
-        "openshift-qe": "workload failure",
-        "upgrade": "upgrade failure",
-    }
+    step_name = step_name.lower()
 
-    for keyword, description in failure_map.items():
+    for keyword, (_, description) in FAILURE_KEYWORDS.items():
         if keyword in step_name:
             return f"{step_phase} phase: {description}"
 
