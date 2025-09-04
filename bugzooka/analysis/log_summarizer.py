@@ -354,6 +354,8 @@ def render_failure_breakdown(
     version_counts=None,
     messages_by_type=None,
     messages_by_version=None,
+    version_type_counts=None,
+    version_type_messages=None,
 ):
     """
     Build a polished markdown summary from counts using the labels returned by classifier.
@@ -381,9 +383,10 @@ def render_failure_breakdown(
         pct = (count / total_failures) * 100 if total_failures else 0
         lines.append(f"• **{ftype}** — {count} _({pct:.0f}% )_")
         if messages_by_type and ftype in messages_by_type:
-            for msg in messages_by_type.get(ftype, [])[:10]:
-                lines.append(f"    {msg}")
-        lines.append(f"   {mini_separator}")
+            for i, msg in enumerate(messages_by_type.get(ftype, [])[:10], start=1):
+                lines.append(f"    {i}. {msg}")
+        if idx < len(sorted_types) - 1:
+            lines.append(f"   {mini_separator}")
 
     lines.append("")
     # Openshift version breakdown
@@ -408,9 +411,23 @@ def render_failure_breakdown(
         for idx, (version, count) in enumerate(sorted_versions):
             pct = (count / total_failures) * 100 if total_failures else 0
             lines.append(f"• **{version}** — {count} _({pct:.0f}% )_")
-            if messages_by_version and version in messages_by_version:
-                for msg in messages_by_version.get(version, [])[:10]:
-                    lines.append(f"    {msg}")
-            lines.append(f"   {mini_separator}")
+            # Do not print messages at the version level; show them under each type instead
+
+            # Type breakdown within each version
+            if version_type_counts and version in version_type_counts:
+                types_for_version = version_type_counts.get(version, {})
+                for t, t_count in sorted(
+                    types_for_version.items(), key=lambda x: -x[1]
+                ):
+                    t_pct = (t_count / count) * 100 if count else 0
+                    lines.append(f"      • {t} — {t_count} _({t_pct:.0f}% )_")
+                    if version_type_messages and version in version_type_messages:
+                        for i, msg in enumerate(
+                            version_type_messages.get(version, {}).get(t, [])[:10],
+                            start=1,
+                        ):
+                            lines.append(f"          {i}. {msg}")
+            if idx < len(sorted_versions):
+                lines.append(f"   {mini_separator}")
 
     return "\n".join(lines)
