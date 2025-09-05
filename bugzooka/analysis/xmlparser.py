@@ -1,6 +1,10 @@
 import re
 import logging
-import xmltodict
+
+try:
+    import xmltodict  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    xmltodict = None  # Fallback for environments without xmltodict
 
 from bugzooka.core.utils import extract_prow_test_phase, extract_prow_test_name
 
@@ -14,6 +18,10 @@ def load_xml_as_dict(xml_path):
     :param xml_path: xml file path
     :return: xml to dictionary
     """
+    if xmltodict is None:
+        raise ImportError(
+            "xmltodict is required to parse XML files. Please install it to use XML parsing features."
+        )
     with open(xml_path, "r", encoding="utf-8") as f:
         return xmltodict.parse(f.read())
 

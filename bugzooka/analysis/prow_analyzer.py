@@ -5,6 +5,7 @@ import re
 from collections import deque
 from pathlib import Path
 from bugzooka.core.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
+from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.analysis.log_summarizer import search_prow_errors
 from bugzooka.analysis.xmlparser import (
     summarize_orion_xml,
@@ -55,7 +56,14 @@ def scan_orion_xmls(directory_path):
     base_dir = Path(f"{directory_path}/orion")
     xml_files = base_dir.glob("*.xml")
     for xml_file in xml_files:
-        xml_content = summarize_orion_xml(xml_file)
+        try:
+            xml_content = summarize_orion_xml(xml_file)
+        except ImportError as e:
+            logger.warning("Orion XML parsing unavailable: %s", e)
+            return []
+        except Exception as e:
+            logger.warning("Failed to summarize Orion XML '%s': %s", xml_file, e)
+            continue
         if xml_content != "":
             return [xml_content]
     return []
@@ -69,18 +77,9 @@ def categorize_prow_failure(step_name, step_phase):
     :param step_phase: step phase
     :return: categorized preview tag message
     """
-    failure_map = {
-        "provision": "provision failure",
-        "deprovision": "deprovision failure",
-        "gather": "must gather failure",
-        "orion": "change point detection failure",
-        "cerberus": "cerberus health check failure",
-        "node-readiness": "nodes readiness check failure",
-        "openshift-qe": "workload failure",
-        "upgrade": "upgrade failure",
-    }
+    step_name = step_name.lower()
 
-    for keyword, description in failure_map.items():
+    for keyword, (_, description) in FAILURE_KEYWORDS.items():
         if keyword in step_name:
             return f"{step_phase} phase: {description}"
 
@@ -124,10 +123,21 @@ def analyze_prow_artifacts(directory_path, job_name):
             )
             return [matched_line], MAINTENANCE_ISSUE, False, True
     junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
+    # Defaults in case XML parsing yields no values
+    step_phase, step_name, step_summary = None, None, ""
     if os.path.isfile(junit_operator_file_path):
-        step_phase, step_name, step_summary = summarize_junit_operator_xml(
-            junit_operator_file_path
-        )
+        try:
+            step_phase, step_name, step_summary = summarize_junit_operator_xml(
+                junit_operator_file_path
+            )
+        except ImportError as e:
+            logger.warning("JUnit operator XML parsing unavailable: %s", e)
+        except Exception as e:
+            logger.warning(
+                "Failed to parse junit_operator.xml '%s': %s",
+                junit_operator_file_path,
+                e,
+            )
         if step_name and step_phase:
             categorization_message = categorize_prow_failure(step_name, step_phase)
         else:
@@ -141,7 +151,7 @@ def analyze_prow_artifacts(directory_path, job_name):
             [
                 "\n Somehow couldn't find clusteroperators.json file",
                 matched_line + "\n",
-                step_summary + "\n".join(build_log_content),
+                (step_summary or "") + "\n".join(build_log_content),
             ],
             categorization_message,
             False,
@@ -153,7 +163,7 @@ def analyze_prow_artifacts(directory_path, job_name):
         if len(orion_errors) == 0:
             return (
                 [matched_line]
-                + [step_summary]
+                + [step_summary or ""]
                 + search_prow_errors(directory_path, job_name),
                 categorization_message,
                 True,
