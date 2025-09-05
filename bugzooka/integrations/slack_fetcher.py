@@ -284,12 +284,24 @@ class SlackMessageFetcher:
 
                     counts[category] = counts.get(category, 0) + 1
                     if v:
+                        # Try to fetch permalink for this Slack message
+                        permalink = None
+                        try:
+                            pl_resp = self.client.chat_getPermalink(
+                                channel=self.channel_id, message_ts=msg.get("ts")
+                            )
+                            permalink = pl_resp.get("permalink")
+                        except Exception:
+                            permalink = None
+                        message_with_link = (
+                            f"{text} -- <{permalink}|Permalink>" if permalink else text
+                        )
                         version_type_counts.setdefault(v, {})[category] = (
                             version_type_counts.setdefault(v, {}).get(category, 0) + 1
                         )
                         version_type_messages.setdefault(v, {}).setdefault(
                             category, []
-                        ).append(text)
+                        ).append(message_with_link)
 
             if not response.get("has_more"):
                 break
@@ -318,7 +330,9 @@ class SlackMessageFetcher:
         self.logger.info(f"📩 New message from {user}: {text} at ts {ts}")
 
         # Dynamic summarize trigger: summarize <time> (e.g., 20m, 1h, 2d)
-        m = re.search(r"\b(?:summarise|summarize)\b\s+(\d+)([mhd])", text_lower)
+        m = re.fullmatch(
+            r"(?:summarise|summarize)\s+(\d+)([mhd])(?:\s+verbose)?", text_lower
+        )
         if m:
             value, unit = m.group(1), m.group(2)
             factor = {"m": 60, "h": 3600, "d": 86400}[unit]
