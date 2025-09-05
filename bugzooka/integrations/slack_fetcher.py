@@ -284,12 +284,24 @@ class SlackMessageFetcher:
 
                     counts[category] = counts.get(category, 0) + 1
                     if v:
+                        # Try to fetch permalink for this Slack message
+                        permalink = None
+                        try:
+                            pl_resp = self.client.chat_getPermalink(
+                                channel=self.channel_id, message_ts=msg.get("ts")
+                            )
+                            permalink = pl_resp.get("permalink")
+                        except Exception:
+                            permalink = None
+                        message_with_link = (
+                            f"{text} -- <{permalink}|Permalink>" if permalink else text
+                        )
                         version_type_counts.setdefault(v, {})[category] = (
                             version_type_counts.setdefault(v, {}).get(category, 0) + 1
                         )
                         version_type_messages.setdefault(v, {}).setdefault(
                             category, []
-                        ).append(text)
+                        ).append(message_with_link)
 
             if not response.get("has_more"):
                 break
