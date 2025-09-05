@@ -318,7 +318,7 @@ class SlackMessageFetcher:
         self.logger.info(f"📩 New message from {user}: {text} at ts {ts}")
 
         # Dynamic summarize trigger: summarize <time> (e.g., 20m, 1h, 2d)
-        m = re.search(r"\b(?:summarise|summarize)\b\s+(\d+)([mhd])", text_lower)
+        m = re.fullmatch(r"(?:summarise|summarize)\s+(\d+)([mhd])(?:\s+verbose)?", text_lower)
         if m:
             value, unit = m.group(1), m.group(2)
             factor = {"m": 60, "h": 3600, "d": 86400}[unit]
