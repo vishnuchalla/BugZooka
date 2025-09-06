@@ -2,6 +2,7 @@ import io
 import signal
 import sys
 import time
+import re
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -9,6 +10,7 @@ from slack_sdk.errors import SlackApiError
 from bugzooka.core.config import (
     SLACK_BOT_TOKEN,
     JEDI_BOT_SLACK_USER_ID,
+    SUMMARY_LOOKBACK_SECONDS,
 )
 from bugzooka.core.constants import (
     MAX_CONTEXT_SIZE,
@@ -19,10 +21,15 @@ from bugzooka.analysis.log_analyzer import (
     filter_errors_with_llm,
     run_agent_analysis,
 )
+from bugzooka.analysis.log_summarizer import (
+    classify_failure_type,
+    render_failure_breakdown,
+)
 from bugzooka.integrations.inference import (
     InferenceAPIUnavailableError,
     AgentAnalysisLimitExceededError,
 )
+from typing import Dict, Tuple, Optional, List
 
 
 class SlackMessageFetcher:
@@ -195,6 +202,122 @@ class SlackMessageFetcher:
             thread_ts=max_ts,
         )
 
+    def _summarize_messages_in_range(
+        self,
+        oldest_ts: str,
+        latest_ts: str,
+        product: str,
+        ci_system: str,
+        product_config,
+    ) -> Tuple[
+        int,
+        int,
+        Dict[str, int],
+        Dict[str, int],
+        Dict[str, Dict[str, int]],
+        Dict[str, Dict[str, List[str]]],
+    ]:
+        """
+        Iterate Slack history over [oldest_ts, latest_ts], analyze failures, and aggregate counts.
+        Returns (total_jobs, total_failures, counts_by_type)
+        """
+        total_jobs = 0
+        total_failures = 0
+        counts: Dict[str, int] = {}
+        version_counts: Dict[str, int] = {}
+        version_type_counts: Dict[str, Dict[str, int]] = {}
+        version_type_messages: Dict[str, Dict[str, List[str]]] = {}
+
+        cursor = None
+        current_latest: Optional[str] = latest_ts
+        tried_without_latest = False
+        while True:
+            params = {
+                "channel": self.channel_id,
+                "oldest": oldest_ts,
+                "limit": 200,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            if current_latest:
+                params["latest"] = current_latest
+
+            response = self.client.conversations_history(**params)
+            messages = response.get("messages", [])
+            if not messages:
+                # Fallback: if we requested with a latest bound and got nothing, retry without latest
+                if current_latest and not tried_without_latest:
+                    tried_without_latest = True
+                    current_latest = None
+                    cursor = None
+                    continue
+                break
+
+            for msg in messages:
+                text = msg.get("text", "")
+                text_lower = text.lower()
+                # Count only messages that look like job results
+                if "job" in text_lower and "ended with" in text_lower:
+                    total_jobs += 1
+
+                # Robust failure detection (case-insensitive, tolerate punctuation/emojis)
+                if "ended with" in text_lower and "failure" in text_lower:
+                    total_failures += 1
+                    # Extract OpenShift version like 4.19, 4.20, etc., if present
+                    vm = re.search(r"\b4\.\d{1,2}\b", text_lower)
+                    v = vm.group(0) if vm else None
+                    if v:
+                        version_counts[v] = version_counts.get(v, 0) + 1
+                    analysis = download_and_analyze_logs(text, ci_system)
+                    (
+                        errors_list,
+                        categorization_message,
+                        _requires_llm,
+                        is_install_issue,
+                    ) = analysis
+                    if errors_list is None:
+                        category = "unknown"
+                    else:
+                        category = classify_failure_type(
+                            errors_list, categorization_message, is_install_issue
+                        )
+
+                    counts[category] = counts.get(category, 0) + 1
+                    if v:
+                        # Try to fetch permalink for this Slack message
+                        permalink = None
+                        try:
+                            pl_resp = self.client.chat_getPermalink(
+                                channel=self.channel_id, message_ts=msg.get("ts")
+                            )
+                            permalink = pl_resp.get("permalink")
+                        except Exception:
+                            permalink = None
+                        message_with_link = (
+                            f"{text} -- <{permalink}|Permalink>" if permalink else text
+                        )
+                        version_type_counts.setdefault(v, {})[category] = (
+                            version_type_counts.setdefault(v, {}).get(category, 0) + 1
+                        )
+                        version_type_messages.setdefault(v, {}).setdefault(
+                            category, []
+                        ).append(message_with_link)
+
+            if not response.get("has_more"):
+                break
+            cursor = response.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
+
+        return (
+            total_jobs,
+            total_failures,
+            counts,
+            version_counts,
+            version_type_counts,
+            version_type_messages,
+        )
+
     def _process_message(
         self, msg, product, ci_system, product_config, enable_inference
     ):
@@ -202,10 +325,33 @@ class SlackMessageFetcher:
         user = msg.get("user", "Unknown")
         text = msg.get("text", "No text available")
         ts = msg.get("ts")
+        text_lower = text.lower()
 
         self.logger.info(f"📩 New message from {user}: {text} at ts {ts}")
 
-        if "failure" not in text.lower():
+        # Dynamic summarize trigger: summarize <time> (e.g., 20m, 1h, 2d)
+        m = re.fullmatch(
+            r"(?:summarise|summarize)\s+(\d+)([mhd])(?:\s+verbose)?", text_lower
+        )
+        if m:
+            value, unit = m.group(1), m.group(2)
+            factor = {"m": 60, "h": 3600, "d": 86400}[unit]
+            lookback = int(value) * factor
+            verbose = "verbose" in text_lower
+            self.logger.info("Triggering time summary on demand for %s%s", value, unit)
+            self.post_time_summary(
+                product=product,
+                ci=ci_system,
+                product_config=product_config,
+                thread_ts=ts,
+                lookback_seconds=lookback,
+                verbose=verbose,
+            )
+            return ts
+
+        # No weekly trigger; dynamic summarize only
+
+        if "failure" not in text_lower:
             self.logger.info("Not a failure job, skipping")
             return ts
 
@@ -314,6 +460,65 @@ class SlackMessageFetcher:
             self.logger.error(f"❌ Slack API Error: {e.response['error']}")
         except Exception as e:
             self.logger.error(f"⚠️ Unexpected Error: {str(e)}")
+
+    def post_time_summary(self, **kwargs):
+        """
+        Fetch messages from the last lookback_seconds, aggregate failures by type, and post a summary.
+        """
+        try:
+            product = kwargs["product"]
+            ci_system = kwargs["ci"]
+            product_config = kwargs["product_config"]
+            thread_ts: Optional[str] = kwargs.get("thread_ts")
+            lookback_seconds: int = kwargs.get(
+                "lookback_seconds", SUMMARY_LOOKBACK_SECONDS
+            )
+            verbose: bool = kwargs.get("verbose", False)
+
+            now = time.time()
+            oldest = f"{now - lookback_seconds:.6f}"
+            latest = f"{now:.6f}"
+
+            (
+                total_jobs,
+                total_failures,
+                counts,
+                version_counts,
+                version_type_counts,
+                version_type_messages,
+            ) = self._summarize_messages_in_range(
+                oldest_ts=oldest,
+                latest_ts=latest,
+                product=product,
+                ci_system=ci_system,
+                product_config=product_config,
+            )
+
+            summary_text = render_failure_breakdown(
+                counts,
+                total_jobs,
+                total_failures,
+                version_counts=version_counts,
+                version_type_counts=version_type_counts,
+                version_type_messages=version_type_messages if verbose else None,
+            )
+
+            message_block = self._get_slack_message_blocks(
+                markdown_header=":star: *Summary* :star:\n",
+                content_text=summary_text,
+                use_markdown=True,
+            )
+
+            self.client.chat_postMessage(
+                channel=self.channel_id,
+                text="Summary",
+                blocks=message_block,
+                thread_ts=thread_ts,
+            )
+        except SlackApiError as e:
+            self.logger.error(f"❌ Slack API Error (summary): {e.response['error']}")
+        except Exception as e:
+            self.logger.error(f"⚠️ Unexpected Error in summary: {str(e)}")
 
     def run(self, **kwargs):
         """

@@ -11,6 +11,7 @@ from bugzooka.core.constants import (
     INFERENCE_API_RETRY_DELAY,
     INFERENCE_API_RETRY_BACKOFF_MULTIPLIER,
     INFERENCE_API_MAX_RETRY_DELAY,
+    SUMMARY_LOOKBACK_SECONDS_DEFAULT,
 )
 
 
@@ -23,6 +24,11 @@ JEDI_BOT_SLACK_USER_ID = os.getenv("JEDI_BOT_SLACK_USER_ID", None)
 # Analysis mode configuration
 # Options: "gemini", or any other value defaults to agent-based analysis
 ANALYSIS_MODE = os.getenv("ANALYSIS_MODE", None)
+
+# Weekly summary lookback window (seconds). Default: 7 days
+SUMMARY_LOOKBACK_SECONDS = int(
+    os.getenv("SUMMARY_LOOKBACK_SECONDS", SUMMARY_LOOKBACK_SECONDS_DEFAULT)
+)
 
 
 def get_product_config(product_name: str):

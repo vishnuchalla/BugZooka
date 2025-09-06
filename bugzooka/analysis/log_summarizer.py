@@ -7,6 +7,7 @@ import requests
 
 from bugzooka.core.constants import MAX_CONTEXT_SIZE
 from bugzooka.analysis.prompts import ERROR_SUMMARIZATION_PROMPT
+from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.core.utils import (
     download_file_from_gcs,
     filter_most_frequent_errors,
@@ -309,3 +310,106 @@ def generate_prompt(error_list):
         {"role": "assistant", "content": ERROR_SUMMARIZATION_PROMPT["assistant"]},
     ]
     return messages
+
+
+def classify_failure_type(errors_list, categorization_message, is_install_issue):
+    """
+    Map analysis outputs to a display label for failure type.
+    """
+    cat = (categorization_message or "").lower()
+    try:
+        for keyword, (label, _) in FAILURE_KEYWORDS.items():
+            if keyword in cat:
+                return label
+
+        if is_install_issue:
+            return "Install"
+
+        # Heuristic
+        if any('"Name"' in e and '"Reason"' in e for e in (errors_list or [])):
+            return "Install"
+
+        if cat.strip():
+            return "Prow Other"
+        return "Unknown"
+    except Exception:
+        return "Unknown"
+
+
+def render_failure_breakdown(
+    counts,
+    total_jobs,
+    total_failures,
+    version_counts=None,
+    version_type_counts=None,
+    version_type_messages=None,
+):
+    """
+    Build a polished markdown summary from counts using the labels returned by classifier.
+    """
+    if total_jobs == 0:
+        return "No job messages found in the selected period."
+
+    separator = "----------------------------------------"
+    mini_separator = "---"
+
+    failure_rate = (total_failures / total_jobs) * 100.0 if total_jobs else 0
+    lines = [
+        f"• **Total Jobs:** {total_jobs}",
+        f"• **Failures:** {total_failures} _({failure_rate:.0f}% failure rate)_",
+        "",
+        separator,
+        "",
+        ":construction: **Failure Breakdown by the type of Issue:**",
+        "",
+    ]
+
+    # Failure type breakdown
+    sorted_types = sorted(counts.items(), key=lambda x: -x[1])
+    for idx, (ftype, count) in enumerate(sorted_types):
+        pct = (count / total_failures) * 100 if total_failures else 0
+        lines.append(f"• **{ftype}** — {count} _({pct:.0f}% )_")
+
+    lines.append("")
+    # Openshift version breakdown
+    if version_counts:
+        lines.append("")
+        lines.append(separator)
+        lines.append("")
+        lines.append(":label: **Failure Breakdown by OpenShift Version:**")
+        lines.append("")
+
+        # Sort versions numerically by major.minor
+        def _version_key(v):
+            try:
+                major, minor = v.split(".")
+                return (int(major), int(minor))
+            except Exception:
+                return (0, 0)
+
+        sorted_versions = sorted(
+            version_counts.items(), key=lambda x: _version_key(x[0]), reverse=True
+        )
+        for idx, (version, count) in enumerate(sorted_versions):
+            pct = (count / total_failures) * 100 if total_failures else 0
+            lines.append(f"• **{version}** — {count} _({pct:.0f}% )_")
+            # Do not print messages at the version level; show them under each type instead
+
+            # Type breakdown within each version
+            if version_type_counts and version in version_type_counts:
+                types_for_version = version_type_counts.get(version, {})
+                for t, t_count in sorted(
+                    types_for_version.items(), key=lambda x: -x[1]
+                ):
+                    t_pct = (t_count / count) * 100 if count else 0
+                    lines.append(f"      • {t} — {t_count} _({t_pct:.0f}% )_")
+                    if version_type_messages and version in version_type_messages:
+                        for i, msg in enumerate(
+                            version_type_messages.get(version, {}).get(t, [])[:10],
+                            start=1,
+                        ):
+                            lines.append(f"          {i}. {msg}")
+            if idx < len(sorted_versions):
+                lines.append(f"   {mini_separator}")
+
+    return "\n".join(lines)
