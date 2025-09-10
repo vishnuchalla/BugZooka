@@ -2,14 +2,14 @@ apiVersion: apps.openshift.io/v1
 kind: DeploymentConfig
 metadata:
   name: bugzooka
-  namespace: bugzooka
+  namespace: ${BUGZOOKA_NAMESPACE}
   labels:
-    app: bugzooka
+    app: ${BUGZOOKA_NAMESPACE}
 spec:
   replicas: 1
   revisionHistoryLimit: 1
   selector:
-    app: bugzooka
+    app: ${BUGZOOKA_NAMESPACE}
     deploymentconfig: bugzooka
   strategy:
     type: Rolling
@@ -23,11 +23,11 @@ spec:
         from:
           kind: ImageStreamTag
           name: bugzooka:latest
-          namespace: bugzooka
+          namespace: ${BUGZOOKA_NAMESPACE}
   template:
     metadata:
       labels:
-        app: bugzooka
+        app: ${BUGZOOKA_NAMESPACE}
         deploymentconfig: bugzooka
     spec:
       containers:

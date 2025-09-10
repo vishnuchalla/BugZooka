@@ -2,9 +2,9 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: bugzooka-prompts
-  namespace: bugzooka
+  namespace: ${BUGZOOKA_NAMESPACE}
   labels:
-    app: bugzooka
+    app: ${BUGZOOKA_NAMESPACE}
 data:
   prompts.json: |
     {
