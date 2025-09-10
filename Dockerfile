@@ -65,9 +65,9 @@ COPY --from=builder /usr/bin/gsutil /usr/bin/gsutil
 COPY --from=builder /usr/local/bin/logjuicer /usr/local/bin/logjuicer
 
 # Create /app directory and change ownership
-RUN mkdir -p /app /data /logs /tmp \
-    && chgrp -R 0 /app /data /logs /tmp \
-    && chmod -R g+rwX /app /data /logs /tmp
+RUN mkdir -p /app /data /logs /tmp /.config /.gsutil \
+    && chgrp -R 0 /app /data /logs /tmp /.config /.gsutil  \
+    && chmod -R g+rwX /app /data /logs /tmp /.config /.gsutil
 
 # Set working directory
 WORKDIR /app
