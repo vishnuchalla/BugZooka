@@ -6,6 +6,27 @@ from bugzooka.core.constants import TOP_N_ERRROS
 logger = logging.getLogger(__name__)
 
 
+def should_ignore_slack_message(text: str) -> bool:
+    """
+    Centralized predicate for skipping noisy/duplicate Slack messages.
+
+    Current rules:
+    - Ignore any message containing 'job-history' (case-insensitive)
+    - Ignore any message that starts with an underscore (e.g., "_...")
+    """
+    try:
+        if not text:
+            return False
+        if re.search(r"job-history", text, flags=re.IGNORECASE):  # cwtch
+            return True
+        if re.match(r"^\s*_", text):
+            return True
+        return False
+    except Exception:
+        # Fail open to avoid hiding messages on unexpected errors
+        return False
+
+
 def extract_job_details(text):
     """
     Extract the name and hyperlink (URL).
@@ -14,6 +35,10 @@ def extract_job_details(text):
     :return: job link and the job name
     """
     try:
+        if should_ignore_slack_message(text):
+            logger.info("Ignoring message based on ignore rules: %s", text)
+            return None, None
+
         URL_PATTERN = re.compile(r"(https://[^\s|]+)")
         url_match = URL_PATTERN.search(text)
         name_match = re.search(r"Job\s+\*?(.+?)\*?\s+ended", text)

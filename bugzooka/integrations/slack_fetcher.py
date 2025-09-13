@@ -23,8 +23,9 @@ from bugzooka.analysis.log_analyzer import (
 )
 from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
-    render_failure_breakdown,
+    build_summary_sections,
 )
+from bugzooka.core.utils import extract_job_details
 from bugzooka.integrations.inference import (
     InferenceAPIUnavailableError,
     AgentAnalysisLimitExceededError,
@@ -88,6 +89,75 @@ class SlackMessageFetcher:
             }
 
         return [header_block, content_block]
+
+    def _sanitize_job_text(self, text: str) -> str:
+        """
+        Clean up noisy Slack job notification text.
+
+        Removes:
+        - Slack emoji codes like :emoji_name:
+        - Leading "Job " token
+        - Trailing "ended with ..." clauses
+        - Common job prefix "periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-"
+        - Leading/trailing asterisks
+        - Extra whitespace
+        """
+        if not text:
+            return text
+        cleaned = text
+        # Remove Slack emojis
+        cleaned = re.sub(r":[A-Za-z0-9_+\-]+:", "", cleaned)
+        # Remove leading "Job "
+        cleaned = re.sub(r"^\s*job\s+", "", cleaned, flags=re.IGNORECASE)
+        # Remove trailing or inline "ended with ..." clauses
+        cleaned = re.sub(
+            r"\s*ended with[^\.!\n]*[\.!]?", "", cleaned, flags=re.IGNORECASE
+        )
+        # Remove common job prefix
+        cleaned = re.sub(
+            r"^\*?periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-", "", cleaned
+        )
+        # Remove asterisks at word boundaries (for leftover Slack formatting)
+        cleaned = re.sub(r"\b\*+|\*+\b", "", cleaned)
+        # Collapse multiple spaces into one
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        cleaned = cleaned.strip()
+
+        return cleaned
+
+    def _chunk_text(self, text: str, limit: int = 11900) -> List[str]:
+        """
+        Split text into chunks not exceeding `limit` characters, preferring newline or
+        whitespace boundaries to avoid breaking mid-sentence.
+        """
+        if not text:
+            return [""]
+
+        chunks: List[str] = []
+        start = 0
+        text_len = len(text)
+        while start < text_len:
+            end = min(start + limit, text_len)
+            if end == text_len:
+                chunks.append(text[start:end])
+                break
+
+            # Try to break on the last newline within the window
+            window = text[start:end]
+            split_idx = window.rfind("\n")
+            if split_idx == -1:
+                # Fallback: try last whitespace
+                split_idx = max(window.rfind(" "), window.rfind("\t"))
+            if split_idx == -1:
+                # As a last resort, hard cut at limit
+                split_at = end
+            else:
+                split_at = start + split_idx + 1  # include the newline/space
+
+            chunks.append(text[start:split_at].rstrip())
+            start = split_at
+
+        return chunks
 
     def _filter_new_messages(self, messages):
         """Filter messages to only include new ones that haven't been processed."""
@@ -235,7 +305,7 @@ class SlackMessageFetcher:
             params = {
                 "channel": self.channel_id,
                 "oldest": oldest_ts,
-                "limit": 200,
+                "limit": 2000,
             }
             if cursor:
                 params["cursor"] = cursor
@@ -255,10 +325,11 @@ class SlackMessageFetcher:
 
             for msg in messages:
                 text = msg.get("text", "")
+                job_url, job_name = extract_job_details(text)
+                if not job_url or not job_name:
+                    continue
+                total_jobs += 1
                 text_lower = text.lower()
-                # Count only messages that look like job results
-                if "job" in text_lower and "ended with" in text_lower:
-                    total_jobs += 1
 
                 # Robust failure detection (case-insensitive, tolerate punctuation/emojis)
                 if "ended with" in text_lower and "failure" in text_lower:
@@ -293,8 +364,11 @@ class SlackMessageFetcher:
                             permalink = pl_resp.get("permalink")
                         except Exception:
                             permalink = None
+                        cleaned_text = self._sanitize_job_text(text)
                         message_with_link = (
-                            f"{text} -- <{permalink}|Permalink>" if permalink else text
+                            f"{cleaned_text} | <{permalink}|Permalink>"
+                            if permalink
+                            else cleaned_text
                         )
                         version_type_counts.setdefault(v, {})[category] = (
                             version_type_counts.setdefault(v, {}).get(category, 0) + 1
@@ -494,27 +568,32 @@ class SlackMessageFetcher:
                 product_config=product_config,
             )
 
-            summary_text = render_failure_breakdown(
+            # Build posting sections in summarizer to keep this class thin
+            sections = build_summary_sections(
                 counts,
                 total_jobs,
                 total_failures,
                 version_counts=version_counts,
                 version_type_counts=version_type_counts,
-                version_type_messages=version_type_messages if verbose else None,
+                version_type_messages=version_type_messages,
+                verbose=verbose,
             )
 
-            message_block = self._get_slack_message_blocks(
-                markdown_header=":star: *Summary* :star:\n",
-                content_text=summary_text,
-                use_markdown=True,
-            )
-
-            self.client.chat_postMessage(
-                channel=self.channel_id,
-                text="Summary",
-                blocks=message_block,
-                thread_ts=thread_ts,
-            )
+            CHUNK_LIMIT = 11900
+            for header, content in sections:
+                chunks = self._chunk_text(content, CHUNK_LIMIT)
+                for chunk in chunks:
+                    message_block = self._get_slack_message_blocks(
+                        markdown_header=" ",  # no header line
+                        content_text=chunk,
+                        use_markdown=True,
+                    )
+                    self.client.chat_postMessage(
+                        channel=self.channel_id,
+                        text="Summary",
+                        blocks=message_block,
+                        thread_ts=thread_ts,
+                    )
         except SlackApiError as e:
             self.logger.error(f"❌ Slack API Error (summary): {e.response['error']}")
         except Exception as e:

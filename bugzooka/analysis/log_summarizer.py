@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 from collections import deque
+from typing import List, Tuple, Optional
 import requests
 
 from bugzooka.core.constants import MAX_CONTEXT_SIZE
@@ -350,66 +351,143 @@ def render_failure_breakdown(
     if total_jobs == 0:
         return "No job messages found in the selected period."
 
-    separator = "----------------------------------------"
-    mini_separator = "---"
+    separator = "---------------------------------------------------------------"
 
     failure_rate = (total_failures / total_jobs) * 100.0 if total_jobs else 0
     lines = [
         f"• **Total Jobs:** {total_jobs}",
-        f"• **Failures:** {total_failures} _({failure_rate:.0f}% failure rate)_",
-        "",
-        separator,
-        "",
-        ":construction: **Failure Breakdown by the type of Issue:**",
-        "",
+        f"• **Failures:** {total_failures} ({failure_rate:.0f}% failure rate)",
     ]
+    lines.append(f"    {separator}")
+    return "\n".join(lines)
 
-    # Failure type breakdown
+
+def render_version_breakdown(
+    version,
+    total_failures,
+    version_counts,
+    version_type_counts,
+    version_type_messages=None,
+):
+    """
+    Build markdown text for a single OpenShift version, including nested type counts
+    and optionally the original messages.
+    """
+    count = version_counts.get(version, 0)
+    pct = (count / total_failures) * 100 if total_failures else 0
+    mini_separator = "---"
+
+    lines = [f"**{version}** — {count} ({pct:.0f}% )"]
+
+    types_for_version = (
+        version_type_counts.get(version, {}) if version_type_counts else {}
+    )
+    for t, t_count in sorted(types_for_version.items(), key=lambda x: -x[1]):
+        t_pct = (t_count / count) * 100 if count else 0
+        lines.append(f":white_small_square: {t} — {t_count} ({t_pct:.0f}% )")
+        if version_type_messages and version in version_type_messages:
+            for i, msg in enumerate(
+                version_type_messages.get(version, {}).get(t, []), start=1
+            ):
+                lines.append(f":black_small_square::black_small_square: {msg}")
+
+    lines.append(f"   {mini_separator}")
+    return "\n".join(lines)
+
+
+def render_type_breakdown(counts, total_failures):
+    """
+    Build markdown text for Failure Breakdown by the type of Issue.
+    """
+    separator = "---------------------------------------------------------------"
+    lines = [":construction: **Failure Breakdown by the type of Issue:**", ""]
     sorted_types = sorted(counts.items(), key=lambda x: -x[1])
-    for idx, (ftype, count) in enumerate(sorted_types):
+    for ftype, count in sorted_types:
         pct = (count / total_failures) * 100 if total_failures else 0
-        lines.append(f"• **{ftype}** — {count} _({pct:.0f}% )_")
+        lines.append(f"• **{ftype}** — {count} ({pct:.0f}% )")
+    lines.append(f"    {separator}")
+    return "\n".join(lines)
 
-    lines.append("")
-    # Openshift version breakdown
-    if version_counts:
-        lines.append("")
-        lines.append(separator)
-        lines.append("")
-        lines.append(":label: **Failure Breakdown by OpenShift Version:**")
-        lines.append("")
 
-        # Sort versions numerically by major.minor
-        def _version_key(v):
+def build_summary_sections(
+    counts,
+    total_jobs: int,
+    total_failures: int,
+    version_counts: Optional[dict] = None,
+    version_type_counts: Optional[dict] = None,
+    version_type_messages: Optional[dict] = None,
+    verbose: bool = False,
+) -> List[Tuple[str, str]]:
+    """
+    Build a list of (markdown_header, content_text) sections for Slack posting.
+    This function decides whether to chunk by versions to avoid Slack's msg_too_long.
+    """
+    sections: List[Tuple[str, str]] = []
+
+    summary_text = render_failure_breakdown(
+        counts,
+        total_jobs,
+        total_failures,
+        version_counts=version_counts,
+        version_type_counts=version_type_counts,
+        version_type_messages=version_type_messages if verbose else None,
+    )
+
+    MAX_SLACK_TEXT = 3500
+
+    # Precompute type breakdown once
+    type_text = render_type_breakdown(counts, total_failures)
+
+    # Helper to generate version breakdown text blocks (sorted newest first)
+    def _generate_version_texts() -> List[str]:
+        if not version_counts:
+            return []
+
+        def _version_key(v: str):
             try:
                 major, minor = v.split(".")
                 return (int(major), int(minor))
             except Exception:
                 return (0, 0)
 
-        sorted_versions = sorted(
-            version_counts.items(), key=lambda x: _version_key(x[0]), reverse=True
-        )
-        for idx, (version, count) in enumerate(sorted_versions):
-            pct = (count / total_failures) * 100 if total_failures else 0
-            lines.append(f"• **{version}** — {count} _({pct:.0f}% )_")
-            # Do not print messages at the version level; show them under each type instead
+        texts: List[str] = []
+        for v in sorted(version_counts.keys(), key=_version_key, reverse=True):
+            texts.append(
+                render_version_breakdown(
+                    v,
+                    total_failures,
+                    version_counts or {},
+                    version_type_counts or {},
+                    version_type_messages if verbose else None,
+                )
+            )
+        return texts
 
-            # Type breakdown within each version
-            if version_type_counts and version in version_type_counts:
-                types_for_version = version_type_counts.get(version, {})
-                for t, t_count in sorted(
-                    types_for_version.items(), key=lambda x: -x[1]
-                ):
-                    t_pct = (t_count / count) * 100 if count else 0
-                    lines.append(f"      • {t} — {t_count} _({t_pct:.0f}% )_")
-                    if version_type_messages and version in version_type_messages:
-                        for i, msg in enumerate(
-                            version_type_messages.get(version, {}).get(t, [])[:10],
-                            start=1,
-                        ):
-                            lines.append(f"          {i}. {msg}")
-            if idx < len(sorted_versions):
-                lines.append(f"   {mini_separator}")
+    if version_counts and len(summary_text) > MAX_SLACK_TEXT:
+        # Compact header with type breakdown
+        header_lines = summary_text.splitlines()
+        header_body = "\n".join(header_lines[:6])
+        header_body = f"{header_body}\n\n{type_text}"
+        sections.append((":star: *Summary* :star:\n", header_body))
 
-    return "\n".join(lines)
+        # Per-version sections (one message per version)
+        for version_text in _generate_version_texts():
+            sections.append(
+                (":label: *Failure Breakdown by OpenShift Version*\n", version_text)
+            )
+    else:
+        # Ensure type breakdown appears in the main summary message
+        body = f":star: *Summary* :star:\n\n{summary_text}\n\n{type_text}"
+        sections.append(
+            ("", body)
+        )  # header can be empty, content contains full summary
+
+        # When versions exist, include a single combined version section
+        version_texts = _generate_version_texts()
+        if version_texts:
+            versions_body = "\n".join(version_texts)
+            sections.append(
+                (":label: *Failure Breakdown by OpenShift Version*\n", versions_body)
+            )
+
+    return sections
