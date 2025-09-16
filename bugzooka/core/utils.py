@@ -2,19 +2,18 @@ import logging
 import re
 import subprocess
 from bugzooka.core.constants import TOP_N_ERRROS
-from typing import Iterable, Optional, Tuple
+from typing import Tuple, Optional
 import requests
 
 logger = logging.getLogger(__name__)
 
 
-def extract_job_details(text: str) -> Tuple[Optional[str], Optional[str]]:
+def extract_job_details(text):
     """
-    Extract the job URL and job name from a Slack message.
-    Handles Slack-style links and trailing emojis/punctuation.
+    Extract the name and hyperlink (URL).
 
-    :param text: message text in Slack
-    :return: (job_url, job_name) or (None, None) if not found
+    :param text: message text in slack
+    :return: job link and the job name
     """
     try:
         URL_PATTERN = re.compile(r"(https://[^\s|]+)")
@@ -138,7 +137,7 @@ def str_to_bool(value):
     return str(value).lower() == "true"
 
 
-def to_job_history_url(view_url: str) -> str:
+def to_job_history_url(view_url: str) -> Optional[str]:
     """
     Convert a Prow 'view' URL to a 'job-history' URL.
 
@@ -156,38 +155,8 @@ def to_job_history_url(view_url: str) -> str:
         job_history = re.sub(r"/(\d+)$", "", job_history)
         return job_history
     except Exception:
-        return view_url
-
-
-def select_matching_job_message(
-    messages: Iterable[dict],
-    query_substr: str,
-    exclude_ts: Optional[str] = None,
-) -> Tuple[Optional[dict], Optional[str], Optional[str]]:
-    """
-    Given Slack messages, find the first one that:
-    - (optionally) is not the current command/thread ts
-    - contains the word 'job'
-    - contains the query_substr (case-insensitive)
-    - and from which we can extract a valid (view_url, job_name)
-
-    Returns: (matched_message, view_url, job_name) or (None, None, None)
-    """
-    lowered_query = (query_substr or "").lower()
-    for message in messages:
-        text = message.get("text", "")
-        ts_val = message.get("ts")
-        if exclude_ts and ts_val == exclude_ts:
-            continue
-        text_lower = text.lower()
-        if "job" not in text_lower:
-            continue
-        if lowered_query not in text_lower:
-            continue
-        view_url, job_name = extract_job_details(text)
-        if view_url and job_name:
-            return message, view_url, job_name
-    return None, None, None
+        logger.error("Failed to convert view URL to job history URL: %s", view_url)
+        return None
 
 
 def fetch_job_history_stats(job_history_url: str) -> Tuple[int, int, int, str]:
@@ -217,3 +186,17 @@ def fetch_job_history_stats(job_history_url: str) -> Tuple[int, int, int, str]:
     else:
         status_emoji = ":alert-siren:"
     return failure_count, total_count, failure_rate, status_emoji
+
+
+def check_url_ok(url: str, timeout: int = 10) -> Tuple[bool, Optional[int]]:
+    """
+    Perform a simple HTTP GET and return whether the response is OK (status 2xx/3xx).
+
+    Returns: (ok, status_code or None if request failed)
+    """
+    try:
+        resp = requests.get(url, timeout=timeout)
+        return bool(resp.ok), int(resp.status_code)
+    except Exception as e:
+        logger.warning("URL check failed for %s: %s", url, e)
+        return False, None

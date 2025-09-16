@@ -31,9 +31,10 @@ from bugzooka.integrations.inference import (
     AgentAnalysisLimitExceededError,
 )
 from bugzooka.core.utils import (
-    select_matching_job_message,
     to_job_history_url,
     fetch_job_history_stats,
+    extract_job_details,
+    check_url_ok,
 )
 from typing import Dict, Tuple, Optional, List, Any
 
@@ -165,47 +166,58 @@ class SlackMessageFetcher:
         return chunks
     def _handle_job_history(
         self,
-        query_substr: str,
         thread_ts: str,
         current_message: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
-        Find the latest job message matching the query, convert its View URL to
-        job-history URL, fetch metadata, and post a response.
+        Convert the current message's View URL to job-history URL, fetch metadata,
+        and post a response in the same thread.
 
         Returns the thread timestamp used for posting.
         """
         try:
-            # Search recent messages for a match
-            hist = self.client.conversations_history(channel=self.channel_id, limit=200)
-            messages = hist.get("messages", [])
-
-            # Include current message if provided
-            if current_message:
-                messages = [current_message] + messages
-
-            matched, view_url, job_name = select_matching_job_message(
-                messages=messages, query_substr=query_substr, exclude_ts=thread_ts
-            )
-
-            if not matched:
-                self.client.chat_postMessage(
-                    channel=self.channel_id,
-                    text=f"No matching job found for substring '{query_substr}'.",
-                    thread_ts=thread_ts,
-                )
-                return thread_ts
-
+            # Extract job details directly from the triggering message
+            source_text = (current_message or {}).get("text") or ""
+            view_url, _ = extract_job_details(source_text)
             if not view_url:
                 self.client.chat_postMessage(
                     channel=self.channel_id,
-                    text="Couldn't extract job URL from the matched message.",
+                    text="Couldn't extract job URL from this message.",
                     thread_ts=thread_ts,
                 )
                 return thread_ts
 
             # Convert to job-history URL
             job_history_url = to_job_history_url(view_url)
+            if not job_history_url:
+                self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    text="Couldn't convert view URL to a job-history URL.",
+                    thread_ts=thread_ts,
+                )
+                return thread_ts
+
+            # Verify the job-history URL is reachable
+            ok, status_code = check_url_ok(job_history_url, timeout=10)
+            if not ok:
+                header = ":warning: *Job History Unavailable*\n"
+                body_lines = [
+                    f"URL: <{job_history_url}|Open Job History>",
+                    f"HTTP Status: {status_code if status_code is not None else 'unknown'}",
+                    "The job history page is not accessible right now.",
+                ]
+                message_block = self._get_slack_message_blocks(
+                    markdown_header=header,
+                    content_text="\n".join(body_lines),
+                    use_markdown=True,
+                )
+                self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    text="Job history unavailable",
+                    blocks=message_block,
+                    thread_ts=thread_ts,
+                )
+                return thread_ts
 
             # Fetch job-history stats
             (
@@ -219,7 +231,6 @@ class SlackMessageFetcher:
             header = ":prow: *Job History*\n"
             body_lines = [
                 f"URL: <{job_history_url}|Open Job History>",
-                f"Job Name: {job_name}",
                 f"Failures: {failure_count} / {total_count}  ({failure_rate:.0f}%)  {status_emoji}",
             ]
             message_block = self._get_slack_message_blocks(
@@ -486,12 +497,6 @@ class SlackMessageFetcher:
         text_lower = text.lower()
 
         self.logger.info(f"📩 New message from {user}: {text} at ts {ts}")
-        # job-history <substring> command
-        jh = re.fullmatch(r"job-history\s+(.+)", text_lower.strip())
-        if jh:
-            query_substr = jh.group(1).strip().lower()
-            self.logger.debug("Query substring: %s", query_substr)
-            return self._handle_job_history(query_substr, ts, current_message=msg)
 
         # Dynamic summarize trigger: summarize <time> (e.g., 20m, 1h, 2d)
         m = re.fullmatch(
@@ -535,7 +540,7 @@ class SlackMessageFetcher:
         )
 
         # Add job-history info in the thread after the preview
-        self._handle_job_history(query_substr=text, thread_ts=ts, current_message=msg)
+        self._handle_job_history(thread_ts=ts, current_message=msg)
 
         if is_install_issue or not enable_inference:
             return ts
