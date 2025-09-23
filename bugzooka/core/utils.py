@@ -2,29 +2,10 @@ import logging
 import re
 import subprocess
 from bugzooka.core.constants import TOP_N_ERRROS
+from typing import Tuple, Optional
+import requests
 
 logger = logging.getLogger(__name__)
-
-
-def should_ignore_slack_message(text: str) -> bool:
-    """
-    Centralized predicate for skipping noisy/duplicate Slack messages.
-
-    Current rules:
-    - Ignore any message containing 'job-history' (case-insensitive)
-    - Ignore any message that starts with an underscore (e.g., "_...")
-    """
-    try:
-        if not text:
-            return False
-        if re.search(r"job-history", text, flags=re.IGNORECASE):  # cwtch
-            return True
-        if re.match(r"^\s*_", text):
-            return True
-        return False
-    except Exception:
-        # Fail open to avoid hiding messages on unexpected errors
-        return False
 
 
 def extract_job_details(text):
@@ -35,10 +16,6 @@ def extract_job_details(text):
     :return: job link and the job name
     """
     try:
-        if should_ignore_slack_message(text):
-            logger.info("Ignoring message based on ignore rules: %s", text)
-            return None, None
-
         URL_PATTERN = re.compile(r"(https://[^\s|]+)")
         url_match = URL_PATTERN.search(text)
         name_match = re.search(r"Job\s+\*?(.+?)\*?\s+ended", text)
@@ -158,3 +135,68 @@ def filter_most_frequent_errors(full_errors, frequent_errors):
 def str_to_bool(value):
     """Convert string to bool."""
     return str(value).lower() == "true"
+
+
+def to_job_history_url(view_url: str) -> Optional[str]:
+    """
+    Convert a Prow 'view' URL to a 'job-history' URL.
+
+    Rules:
+    - Replace '/view/' with '/job-history/'
+    - Remove the trailing run ID ('/<digits>')
+    - Keep everything else intact
+    """
+    try:
+        if "/view/" not in view_url:
+            return view_url
+        # Replace the first occurrence of '/view/' with '/job-history/'
+        job_history = view_url.replace("/view/", "/job-history/", 1)
+        # Remove trailing run id (digits) at the end of URL
+        job_history = re.sub(r"/(\d+)$", "", job_history)
+        return job_history
+    except Exception:
+        logger.error("Failed to convert view URL to job history URL: %s", view_url)
+        return None
+
+
+def fetch_job_history_stats(job_history_url: str) -> Tuple[int, int, int, str]:
+    """
+    Fetch the job history page and compute failure stats and a status emoji.
+
+    Returns: (failure_count, total_count, failure_rate_percent, status_emoji)
+    """
+    failure_count = 0
+    total_count = 0
+    try:
+        resp = requests.get(job_history_url, timeout=10)
+        if resp.ok:
+            page_html = resp.text
+            failure_count = len(re.findall(r"FAILURE|Failure|failed", page_html))
+            total_count = len(re.findall(r"ID", page_html))
+    except Exception as e:
+        logger.warning("Failed to fetch job history page: %s", e)
+
+    failure_rate = int((failure_count / total_count * 100) if total_count else 0)
+    if failure_rate == 0:
+        status_emoji = ":large_green_circle:"
+    elif failure_rate < 50:
+        status_emoji = ":grey_exclamation:"
+    elif failure_rate < 100:
+        status_emoji = ":red_circle:"
+    else:
+        status_emoji = ":alert-siren:"
+    return failure_count, total_count, failure_rate, status_emoji
+
+
+def check_url_ok(url: str, timeout: int = 10) -> Tuple[bool, Optional[int]]:
+    """
+    Perform a simple HTTP GET and return whether the response is OK (status 2xx/3xx).
+
+    Returns: (ok, status_code or None if request failed)
+    """
+    try:
+        resp = requests.get(url, timeout=timeout)
+        return bool(resp.ok), int(resp.status_code)
+    except Exception as e:
+        logger.warning("URL check failed for %s: %s", url, e)
+        return False, None
