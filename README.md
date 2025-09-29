@@ -110,6 +110,43 @@ Along with secrets, prompts are configurable using a `prompts.json` in the root 
 }
 ```
 
+### **MCP Servers**
+MCP servers can be integrated by adding a simple configuration in `mcp_config.json` file in the root directory. Below is an example supporting all three `stdio`, `sse` and `streamable_http` transport types.
+```
+{
+  "mcp_servers": {
+    "github_docker_stdio": {
+      "transport": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=YOUR_PERSONAL_TOKEN",
+        "ghcr.io/github/github-mcp-server"
+      ]
+    },
+    "remote_weather_api": {
+      "transport": "streamable_http",
+      "url": "https://api.example.com/mcp-tools/v1",
+      "headers": {
+        "Authorization": "Bearer remote_api_token"
+      }
+    },
+    "realtime_metrics_sse": {
+      "transport": "sse",
+      "url": "http://localhost:9001/events",
+      "reconnect": {
+        "enabled": true,
+        "maxAttempts": 5,
+        "delayMs": 1000
+      }
+    }
+  }
+}
+```
+**Note**: By just adding MCP servers, BugZooka will have access to tools but they might not be called with appropriate formal parameters. In order for that to work as expected, your own implementation of tool calls is recommended.
+
 ### **Containerized Deployment**
 ```bash
 # Build image using Podman
