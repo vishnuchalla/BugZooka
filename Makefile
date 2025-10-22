@@ -31,7 +31,12 @@ clean:  ## Clean cache and temporary files
 	rm -rf .ruff_cache/
 	rm -rf .mypy_cache/
 
-run:  ## Run BugZooka (requires --product and --ci arguments)
+run:  ## Run BugZooka (if RAG_IMAGE set in env/.env, apply sidecar overlay first)
+	set -a; [ -f env/.env ] && . env/.env; set +a; \
+	if [ -n "$$RAG_IMAGE" ]; then \
+		echo "[run] Applying RAG sidecar overlay to cluster"; \
+		cd kustomize/overlays/rag && kustomize build . | envsubst | oc apply -f -; \
+	fi; \
 	PYTHONPATH=. python bugzooka/entrypoint.py $(ARGS)
 
 podman-build:  ## Build podman image

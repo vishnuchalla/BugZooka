@@ -1,4 +1,5 @@
 import logging
+import os
 
 import requests
 from bugzooka.core.constants import (
@@ -9,6 +10,7 @@ from bugzooka.core.constants import (
     INFERENCE_MAX_TOKENS,
     INFERENCE_API_TIMEOUT_SECONDS,
 )
+from bugzooka.integrations.rag_client_util import get_rag_context
 
 
 class InferenceAPIUnavailableError(Exception):
@@ -131,6 +133,21 @@ def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
             )
         except KeyError:
             formatted_content = prompt_config["user"].format(summary=error_summary)
+
+        # Optionally augment with RAG context when RAG_IMAGE is set
+        rag_image = os.getenv("RAG_IMAGE")
+        rag_query = os.getenv("RAG_QUERY", "Summarize the the rag database")
+        rag_top_k = int(os.getenv("RAG_TOP_K", "5"))
+        if rag_image:
+            try:
+                rag_context = get_rag_context(rag_query, top_k=rag_top_k)
+                if rag_context:
+                    formatted_content = (
+                        f"Context (RAG):\n{rag_context}\n\nTask:\n" + formatted_content
+                    )
+            except Exception:
+                # Fail open: continue without RAG if anything goes wrong
+                pass
 
         messages = [
             {"role": "system", "content": prompt_config["system"]},

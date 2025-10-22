@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../kustomize
+
+patchesStrategicMerge:
+  - sidecar-patch.yaml
+
+# Placeholder image name for the RAG sidecar; overridden via `kustomize edit set image`.
