@@ -50,7 +50,7 @@ make format
 # Run via Makefile
 make run ARGS="--help"
 
-usage: entrypoint.py [-h] [--product PRODUCT] [--ci CI] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--enable-inference]
+usage: entrypoint.py [-h] [--product PRODUCT] [--ci CI] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--enable-inference] [--enable-socket-mode]
 
 BugZooka - Slack Log Analyzer Bot
 
@@ -61,7 +61,29 @@ options:
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL). Can also be set via LOG_LEVEL env var
   --enable-inference    Enable inference mode. Can also be set via ENABLE_INFERENCE env var (true/false).
+  --enable-socket-mode  Enable Socket Mode for real-time @ mention listening in addition to polling. Can also be set via ENABLE_SOCKET_MODE env var (true/false).
 ```
+
+### **Integration Modes**
+
+BugZooka supports two complementary modes for monitoring Slack channels that can run simultaneously:
+
+1. **Polling Mode (Always Active)**: Periodically fetches new messages from the Slack channel at regular intervals. This mode automatically processes all failure messages posted to the channel.
+   ```bash
+   # Run with polling mode only (default)
+   make run ARGS="--product openshift --ci prow"
+   ```
+
+2. **Socket Mode (Optional Add-on)**: Uses WebSocket connections to listen for @ mentions of the bot in real-time. When enabled, this runs in addition to polling mode, allowing users to trigger on-demand analysis by mentioning the bot.
+   ```bash
+   # Run with both polling AND socket mode
+   make run ARGS="--product openshift --ci prow --enable-socket-mode"
+   ```
+   
+   **Socket Mode Requirements:**
+   - An app-level token (`xapp-*`) must be configured as `SLACK_APP_TOKEN`
+   - Socket Mode must be enabled in your Slack app settings
+   - The bot must have the `app_mentions:read` scope
 
 ## **Configurables**
 This tool monitors a slack channel and uses AI to provide replies to CI failure messages. Also it operates as a singleton instance.
@@ -72,6 +94,10 @@ All secrets are passed using a `.env` file which is located in the root director
 ### Mandatory fields
 SLACK_BOT_TOKEN="YOUR_SLACK_BOT_TOKEN"
 SLACK_CHANNEL_ID="YOUR_SLACK_CHANNEL_ID"
+
+### Optional for Socket Mode (required only when using --enable-socket-mode)
+SLACK_APP_TOKEN="YOUR_SLACK_APP_TOKEN"  # App-level token (xapp-*) for WebSocket mode
+ENABLE_SOCKET_MODE="true"  # Set to "true" to enable Socket Mode alongside polling
 
 ### Product based inference details that contain endpoint, token and model details.
 
@@ -155,11 +181,12 @@ podman build -f Dockerfile -t quay.io/YOUR_REPO/bugzooka:latest .
 # Push to registry
 podman push quay.io/YOUR_REPO/bugzooka:latest
 
-# Run as a container
+# Run as a container (with both polling and socket mode)
 podman run -d \
   -e PRODUCT=openshift \
   -e CI=prow \
   -e ENABLE_INFERENCE=true \
+  -e ENABLE_SOCKET_MODE=true \
   -v /path-to/prompts.json:/app/prompts.json:Z \
   -v /path-to/.env:/app/.env:Z \
   quay.io/YOUR_REPO/bugzooka:latest
@@ -195,7 +222,8 @@ bugzooka/
 │   └── utils.py              # Shared utility functions
 ├── integrations/              # External service integrations
 │   ├── __init__.py
-│   ├── slack_fetcher.py      # Slack integration
+│   ├── slack_fetcher.py      # Slack polling integration
+│   ├── slack_socket_listener.py  # Slack Socket Mode integration (WebSocket)
 │   ├── gemini_client.py      # Gemini API client
 │   └── inference.py          # Generic inference API
 └── analysis/                  # Log analysis and processing

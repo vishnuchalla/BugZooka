@@ -18,6 +18,7 @@ from bugzooka.core.constants import (
 load_dotenv()  # Load environment variables
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", None)
+SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN", None)  # For Socket Mode (xapp-*)
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", None)
 JEDI_BOT_SLACK_USER_ID = os.getenv("JEDI_BOT_SLACK_USER_ID", None)
 
