@@ -12,6 +12,7 @@ from bugzooka.core.constants import (
     SLACK_POLL_INTERVAL,
 )
 from bugzooka.integrations.slack_fetcher import SlackMessageFetcher
+from bugzooka.integrations.slack_socket_listener import SlackSocketListener
 from bugzooka.core.utils import str_to_bool
 
 
@@ -43,6 +44,13 @@ def main() -> None:
         default=str_to_bool(os.environ.get("ENABLE_INFERENCE", "false")),
         help="Enable inference mode. Can also be set via ENABLE_INFERENCE env var (true/false).",
     )
+    parser.add_argument(
+        "--enable-socket-mode",
+        action="store_true",
+        default=str_to_bool(os.environ.get("ENABLE_SOCKET_MODE", "false")),
+        help="Enable Socket Mode for real-time @ mention listening in addition to polling. "
+        "Can also be set via ENABLE_SOCKET_MODE env var (true/false).",
+    )
 
     args = parser.parse_args()
     configure_logging(args.log_level)
@@ -67,6 +75,25 @@ def main() -> None:
     fetcher = SlackMessageFetcher(
         channel_id=SLACK_CHANNEL_ID, logger=logger, poll_interval=SLACK_POLL_INTERVAL
     )
+
+    # If socket mode is enabled, start it in a separate thread
+    if args.enable_socket_mode:
+        import threading
+
+        logger.info("Starting Socket Mode (WebSocket) for responding to @ mentions")
+        listener = SlackSocketListener(channel_id=SLACK_CHANNEL_ID, logger=logger)
+
+        # Start socket listener in a separate thread
+        socket_thread = threading.Thread(
+            target=listener.run,
+            kwargs=kwargs,
+            daemon=True,
+            name="SocketModeListener",
+        )
+        socket_thread.start()
+        logger.info("Socket Mode listener started in a background thread")
+
+    # Run polling mode in main thread
     fetcher.run(**kwargs)
 
 
