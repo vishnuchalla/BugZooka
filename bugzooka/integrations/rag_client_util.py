@@ -8,6 +8,12 @@ from llama_index.core.storage.storage_context import StorageContext
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.vector_stores.faiss import FaissVectorStore
 
+# Fix cache permission issue for non-root containers
+os.environ.setdefault("HF_HOME", "/tmp/.cache")
+os.environ.setdefault("TRANSFORMERS_CACHE", "/tmp/.cache")
+os.environ.setdefault("LLAMA_INDEX_CACHE_DIR", "/tmp/.cache")
+os.makedirs("/tmp/.cache", exist_ok=True)
+
 
 def get_rag_context(query: str, top_k: Optional[int] = None) -> str:
     """Return concatenated top-k chunks from the local FAISS store for a query.
@@ -18,7 +24,7 @@ def get_rag_context(query: str, top_k: Optional[int] = None) -> str:
     load_dotenv(dotenv_path=".env", override=False)
     load_dotenv(dotenv_path="/app/.env", override=False)
 
-    db_path = os.getenv("RAG_DB_PATH", "/rag/vector_db")
+    db_path = os.getenv("RAG_DB_PATH", "/rag")
     index_id = os.getenv("RAG_PRODUCT_INDEX", "vector_db_index")
     embed_model_path = os.getenv(
         "EMBEDDING_MODEL_PATH", "sentence-transformers/all-mpnet-base-v2"

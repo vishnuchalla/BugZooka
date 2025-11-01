@@ -5,17 +5,29 @@ metadata:
 spec:
   template:
     spec:
-      containers:
-        - name: bugzooka
-          volumeMounts:
-            - name: rag-db
-              mountPath: /rag
+      initContainers:
         - name: rag
           image: ${RAG_IMAGE}
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Copying RAG data to shared volume...";
+              cp -r /rag/vector_db/* /shared-rag/;
+              echo "Done copying RAG data.";
           envFrom:
             - secretRef:
                 name: bugzooka-env
+          volumeMounts:
+            - name: rag-db
+              mountPath: /shared-rag
+      containers:
+        - name: bugzooka
+          env:
+            - name: PRODUCT
+              value: "openshift"
+            - name: CI
+              value: "prow"
           volumeMounts:
             - name: rag-db
               mountPath: /rag

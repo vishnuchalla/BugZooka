@@ -18,4 +18,4 @@ secretGenerator:
   - name: bugzooka-env
     namespace: ${BUGZOOKA_NAMESPACE}
     envs:
-      - env/.env
+      - ../../.env

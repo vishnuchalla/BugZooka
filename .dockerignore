@@ -28,6 +28,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Environment files
+.env
+
 # Virtual environments
 venv/
 env/
@@ -72,4 +75,4 @@ logs/
 *.tmp
 *.temp
 .tmp/
-.temp/ 
+.temp/

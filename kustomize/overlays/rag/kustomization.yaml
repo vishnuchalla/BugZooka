@@ -2,9 +2,14 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - ../../kustomize
+  - ../../base
 
-patchesStrategicMerge:
-  - sidecar-patch.yaml
+patches:
+  - target:
+      group: apps.openshift.io
+      version: v1
+      kind: DeploymentConfig
+      name: bugzooka
+    path: sidecar-patch.yaml
 
 # Placeholder image name for the RAG sidecar; overridden via `kustomize edit set image`.

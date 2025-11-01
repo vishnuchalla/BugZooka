@@ -1,4 +1,4 @@
-.PHONY: help install dev-install test lint format check clean
+.PHONY: help install dev-install test lint format check clean deploy
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -32,11 +32,6 @@ clean:  ## Clean cache and temporary files
 	rm -rf .mypy_cache/
 
 run:  ## Run BugZooka (if RAG_IMAGE set in env/.env, apply sidecar overlay first)
-	set -a; [ -f env/.env ] && . env/.env; set +a; \
-	if [ -n "$$RAG_IMAGE" ]; then \
-		echo "[run] Applying RAG sidecar overlay to cluster"; \
-		cd kustomize/overlays/rag && kustomize build . | envsubst | oc apply -f -; \
-	fi; \
 	PYTHONPATH=. python bugzooka/entrypoint.py $(ARGS)
 
 podman-build:  ## Build podman image
@@ -51,3 +46,15 @@ podman-run:  ## Run podman container
 		-e GEMINI_VERIFY_SSL=false \
 		-v ./.env:/app/.env:Z \
 		bugzooka:latest
+
+deploy:  ## Deploy to OpenShift (uses overlays/rag if RAG_IMAGE is set in .env)
+	@set -a; \
+	if [ -f .env ]; then . ./.env; fi; \
+	set +a; \
+	if [ -n "$$RAG_IMAGE" ]; then \
+		echo "Deploying with RAG overlay (RAG_IMAGE=$$RAG_IMAGE)"; \
+		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/overlays/rag | envsubst | oc apply -f -; \
+	else \
+		echo "Deploying base kustomize (no RAG_IMAGE)"; \
+		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/base | envsubst | oc apply -f -; \
+	fi
