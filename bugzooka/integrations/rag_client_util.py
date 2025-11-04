@@ -56,34 +56,3 @@ def get_rag_context(query: str, top_k: Optional[int] = None) -> str:
             formatted_chunks.append(f"--- Chunk {i} ---\n{text}\n")
 
     return "\n".join(formatted_chunks)
-
-
-def main() -> None:
-    """CLI entrypoint that mirrors the old rag-client.py behavior."""
-    # Load envs and defaults
-    load_dotenv(dotenv_path=".env", override=False)
-    load_dotenv(dotenv_path="/app/.env", override=False)
-
-    query = os.getenv("RAG_QUERY", "Summarize the the rag database")
-    top_k_env = os.getenv("RAG_TOP_K")
-    k = int(top_k_env) if top_k_env else None
-
-    # Retrieve chunks and print
-    context_text = get_rag_context(query=query, top_k=k)
-
-    print("\n=== Retrieved Chunks ===\n")
-    print(context_text)
-
-    # Ask LLM using the same Settings.llm configured in get_rag_context
-    prompt = (
-        f"Use the following context to answer the question:\n\n{context_text}\n"
-        f"Question: {query}"
-    )
-    answer = Settings.llm.complete(prompt=prompt)
-
-    print("\n=== LLM Answer ===\n")
-    print(answer)
-
-
-if __name__ == "__main__":
-    main()

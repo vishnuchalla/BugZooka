@@ -575,8 +575,8 @@ class SlackMessageFetcher:
                     self.logger.info(
                         "RAG data detected — augmenting analysis with RAG context."
                     )
-                    rag_query = os.getenv("RAG_QUERY", "Summarize the the rag database")
-                    rag_top_k = int(os.getenv("RAG_TOP_K", "5"))
+                    rag_top_k = int(os.getenv("RAG_TOP_K", "3"))
+                    rag_query = f"Provide context relevant to the following errors:\n{error_summary}"
                     rag_context = get_rag_context(rag_query, top_k=rag_top_k)
                     if rag_context:
                         rag_user = RAG_AWARE_PROMPT["user"].format(
