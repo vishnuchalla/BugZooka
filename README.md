@@ -99,6 +99,14 @@ SLACK_CHANNEL_ID="YOUR_SLACK_CHANNEL_ID"
 SLACK_APP_TOKEN="YOUR_SLACK_APP_TOKEN"  # App-level token (xapp-*) for WebSocket mode
 ENABLE_SOCKET_MODE="true"  # Set to "true" to enable Socket Mode alongside polling
 
+### Analysis Mode Configuration
+ANALYSIS_MODE="gemini"  # Options: "gemini" (with tool calling support)
+
+### Gemini API Configuration (required when ANALYSIS_MODE=gemini)
+GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+GEMINI_API_URL="YOUR_GEMINI_API_URL"
+GEMINI_VERIFY_SSL="true"  # Set to "false" for self-signed certificates
+
 ### Product based inference details that contain endpoint, token and model details.
 
 // Openshift inference
@@ -137,8 +145,13 @@ Along with secrets, prompts are configurable using a `prompts.json` in the root 
 ```
 
 ### **MCP Servers**
-MCP servers can be integrated by adding a simple configuration in `mcp_config.json` file in the root directory. Below is an example supporting all three `stdio`, `sse` and `streamable_http` transport types.
-```
+MCP servers can be integrated by adding a simple configuration in `mcp_config.json` file in the root directory.
+
+**Note**: When using Gemini mode (`ANALYSIS_MODE=gemini`) MCP tools are automatically loaded and made available to Gemini for tool calling.
+
+MCP servers support multiple transport types (`stdio`, `sse`, `streamable_http`). Below is an example configuration:
+
+```json
 {
   "mcp_servers": {
     "github_docker_stdio": {

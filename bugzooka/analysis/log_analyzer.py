@@ -32,11 +32,8 @@ from bugzooka.integrations.inference import (
     AgentAnalysisLimitExceededError,
     InferenceAPIUnavailableError,
 )
-from bugzooka.integrations.mcp_client import (
-    mcp_client,
-    mcp_tools,
-    initialize_global_resources_async,
-)
+from bugzooka.integrations import mcp_client as mcp_module
+from bugzooka.integrations.mcp_client import initialize_global_resources_async
 from bugzooka.integrations.gemini_client import analyze_log_with_gemini
 from bugzooka.core.config import ANALYSIS_MODE
 from bugzooka.analysis.prow_analyzer import analyze_prow_artifacts
@@ -159,8 +156,14 @@ def run_agent_analysis(error_summary, product, product_config):
     def _run_agent_analysis():
         if ANALYSIS_MODE == "gemini":
             logger.info("Using Gemini analysis mode")
-            response = analyze_log_with_gemini(product, product_config, error_summary)
-            return response
+            try:
+                # Execute async MCP initialization and Gemini analysis
+                return asyncio.run(_run_gemini_analysis_async(error_summary, product, product_config))
+            except Exception as e:
+                logger.error("Unexpected error during Gemini analysis: %s", str(e), exc_info=True)
+                raise InferenceAPIUnavailableError(
+                    f"Unhandled error during Gemini analysis: {type(e).__name__}: {str(e)}"
+                ) from e
         else:
             logger.info("Using agent-based analysis mode")
             # This is where the core fix is applied.
@@ -177,11 +180,55 @@ def run_agent_analysis(error_summary, product, product_config):
                     f"Unhandled error during agent analysis: {type(e).__name__}: {str(e)}"
                 ) from e
 
+    async def _run_gemini_analysis_async(error_summary, product, product_config):
+        """Run Gemini analysis with MCP tool support."""
+        # Initialize MCP client if not already initialized
+        if mcp_module.mcp_client is None:
+            await initialize_global_resources_async()
+
+        # Create custom tools for product-specific and generic analysis
+        # (same tools as agent mode)
+        product_tool = StructuredTool(
+            name="analyze_product_log",
+            func=partial(product_log_wrapper, product=product, product_config=product_config),
+            description=f"Analyze {product} logs from error summary. Input should be the error summary.",
+            args_schema=SingleStringInput
+        )
+
+        generic_tool = StructuredTool(
+            name="analyze_generic_log",
+            func=partial(generic_log_wrapper, product_config=product_config),
+            description="Analyze general logs from error summary. Input should be the error summary.",
+            args_schema=SingleStringInput
+        )
+
+        # Combine custom tools with MCP tools
+        tools = [product_tool, generic_tool] + mcp_module.mcp_tools
+
+        # Graceful degradation: if no MCP tools loaded, log warning
+        if not mcp_module.mcp_tools:
+            logger.warning(
+                "No MCP tools available for Gemini. "
+                "Continuing with basic analysis tools only."
+            )
+
+        logger.info("Gemini mode: Using %d tools (%d MCP tools)",
+                   len(tools), len(mcp_module.mcp_tools))
+
+        # Call Gemini with tools (await since it's now async)
+        response = await analyze_log_with_gemini(
+            product=product,
+            product_config=product_config,
+            error_summary=error_summary,
+            tools=tools if tools else None
+        )
+
+        return response
+
     async def _run_fallback_agent_analysis_async(error_summary, product, product_config):
         """Fallback to agent-based analysis if direct Gemini call fails."""
 
-        global mcp_client, mcp_tools
-        if mcp_client is None:
+        if mcp_module.mcp_client is None:
             await initialize_global_resources_async()
 
         llm = ChatOpenAI(
@@ -206,7 +253,7 @@ def run_agent_analysis(error_summary, product, product_config):
             args_schema=SingleStringInput
         )
 
-        TOOLS = [product_tool, generic_tool] + mcp_tools
+        TOOLS = [product_tool, generic_tool] + mcp_module.mcp_tools
 
         agent = initialize_agent(
             tools=TOOLS,
