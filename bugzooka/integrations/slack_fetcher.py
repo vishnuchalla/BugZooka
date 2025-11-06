@@ -3,6 +3,7 @@ import signal
 import sys
 import time
 import re
+import os
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -25,11 +26,13 @@ from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
     build_summary_sections,
 )
-from bugzooka.core.utils import extract_job_details
+from bugzooka.analysis.prompts import RAG_AWARE_PROMPT
 from bugzooka.integrations.inference import (
     InferenceAPIUnavailableError,
     AgentAnalysisLimitExceededError,
+    ask_inference_api,
 )
+from bugzooka.integrations.rag_client_util import get_rag_context
 from bugzooka.core.utils import (
     to_job_history_url,
     fetch_job_history_stats,
@@ -164,6 +167,7 @@ class SlackMessageFetcher:
             start = split_at
 
         return chunks
+
     def _handle_job_history(
         self,
         thread_ts: str,
@@ -487,6 +491,14 @@ class SlackMessageFetcher:
             version_type_messages,
         )
 
+    def _is_rag_enabled(self) -> bool:
+        """Check if RAG data exists under /rag."""
+        rag_dir = os.getenv("RAG_DB_PATH", "/rag")
+        if not os.path.isdir(rag_dir):
+            return False
+        # Check for expected RAG artifacts (JSON index/store files)
+        return any(f.name.endswith(".json") for f in os.scandir(rag_dir))
+
     def _process_message(
         self, msg, product, ci_system, product_config, enable_inference
     ):
@@ -556,8 +568,46 @@ class SlackMessageFetcher:
                 error_summary, product, product_config
             )
 
-            # Send final analysis
-            self._send_analysis_result(analysis_response, ts)
+            # Optionally augment with RAG-aware prompt when RAG_IMAGE is set
+            combined_response = analysis_response
+            try:
+                if self._is_rag_enabled():
+                    self.logger.info(
+                        "RAG data detected — augmenting analysis with RAG context."
+                    )
+                    rag_top_k = int(os.getenv("RAG_TOP_K", "3"))
+                    rag_query = f"Provide context relevant to the following errors:\n{error_summary}"
+                    rag_context = get_rag_context(rag_query, top_k=rag_top_k)
+                    if rag_context:
+                        rag_user = RAG_AWARE_PROMPT["user"].format(
+                            rag_context=rag_context,
+                            error_list=error_summary,
+                        )
+                        rag_messages = [
+                            {"role": "system", "content": RAG_AWARE_PROMPT["system"]},
+                            {"role": "user", "content": rag_user},
+                            {
+                                "role": "assistant",
+                                "content": RAG_AWARE_PROMPT["assistant"],
+                            },
+                        ]
+                        rag_resp = ask_inference_api(
+                            messages=rag_messages,
+                            url=product_config["endpoint"][product],
+                            api_token=product_config["token"][product],
+                            model=product_config["model"][product],
+                        )
+                        combined_response = (
+                            f"{analysis_response}\n\n"
+                            f"💡 **RAG-Informed Insights:**\n{rag_resp}"
+                        )
+                else:
+                    self.logger.info("No RAG data found — skipping RAG augmentation.")
+            except Exception as e:
+                self.logger.warning("RAG augmentation failed/skipped: %s", e)
+
+            # Send final analysis (possibly augmented)
+            self._send_analysis_result(combined_response, ts)
 
         except InferenceAPIUnavailableError as e:
             self.logger.warning(

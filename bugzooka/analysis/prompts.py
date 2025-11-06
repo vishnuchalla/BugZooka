@@ -37,3 +37,17 @@ GENERIC_APP_PROMPT = {
     "- <Code fixes or configuration updates>\n"
     "- <Relevant logs, metrics, or monitoring tools>",
 }
+
+RAG_AWARE_PROMPT = {
+    "system": "You are an AI assistant specializing in analyzing logs to detect failures. "
+    "When provided with additional contextual knowledge (from RAG), use it to refine your analysis "
+    "and improve accuracy of diagnostics.",
+    "user": (
+        "You have access to external knowledge retrieved from a vector store (RAG). "
+        "Use this RAG context to better interpret the following log data.\n\n"
+        "RAG Context:\n{rag_context}\n\n"
+        "Log Data:\n{error_list}\n\n"
+        "Using both, detect anomalies, identify key failures, and summarize the most critical issues."
+    ),
+    "assistant": "Here is a context-aware analysis of the most relevant failures:",
+}

@@ -1,0 +1,40 @@
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: bugzooka
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: rag
+          image: ${RAG_IMAGE}
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Copying RAG data to shared volume...";
+              cp -r /rag/vector_db/* /shared-rag/;
+              echo "Done copying RAG data.";
+          volumeMounts:
+            - name: rag-db
+              mountPath: /shared-rag
+      containers:
+        - name: bugzooka
+          envFrom:
+            - secretRef:
+                name: bugzooka-env
+          env:
+            - name: PRODUCT
+              value: "openshift"
+            - name: CI
+              value: "prow"
+            - name: ENABLE_INFERENCE
+              value: "true"
+            - name: RAG_DB_PATH
+              value: "/rag"
+          volumeMounts:
+            - name: rag-db
+              mountPath: /rag
+      volumes:
+        - name: rag-db
+          emptyDir: {}

@@ -144,6 +144,54 @@ Along with secrets, prompts are configurable using a `prompts.json` in the root 
 }
 ```
 
+
+### **Historical Failure Summary (summarize)**
+
+- What it does:
+  - Scans channel history within the specified lookback window
+  - Counts total jobs and failures, groups failures by type
+  - Optionally breaks down by OpenShift version and includes representative messages
+
+- How to run:
+  - Ensure BugZooka is running
+  - In Slack:
+    - `summarize 20m`
+    - `summarize 7d verbose`
+
+- Behavior:
+  - All summary output is threaded under that parent to avoid channel noise
+  - Large sections are chunked to fit Slack limits
+
+- Notes:
+  - Only CI job notifications that clearly indicate a failure are included
+  - No persistent state; summaries read from channel history at request time
+
+### **RAG-Augmented Analysis (Optional)**
+BugZooka can optionally enrich its “Implications to understand” output with Retrieval-Augmented Generation (RAG) context when a local vector store is available.
+
+- What it does:
+  - Detects RAG data under `RAG_DB_PATH` (default: `/rag`).
+  - Retrieves top-k relevant chunks via the local FAISS index.
+  - Uses `RAG_AWARE_PROMPT` to ask the inference API for context-aware insights.
+  - Appends a “RAG-Informed Insights” section beneath the standard implications.
+
+- Enable via deployment overlay:
+  - Build your BYOK RAG image following the BYOK tooling HOWTO and set it as `RAG_IMAGE` in your `.env`:
+    - [BYOK Tooling HOWTO](https://github.com/openshift/lightspeed-rag-content/tree/main/byok#byok-tooling-howto)
+  - Run `make deploy`. The Makefile will apply the RAG overlay and mount a shared volume at `/rag`.
+  - Note: The BYOK image is intended to be used as an initContainer to prepare the vector store. In this repository, the provided overlay runs it as a sidecar; both patterns are supported for preparing/serving `/rag`.
+  - For local testing without a cluster, place your RAG content under `/rag`; BugZooka will auto-detect it.
+
+- Behavior and fallback:
+  - If no RAG artifacts are detected, analysis proceeds unchanged.
+
+- Files of interest:
+  - `bugzooka/integrations/rag_client_util.py`: retrieves top-k chunks from FAISS
+  - `bugzooka/analysis/prompts.py`: `RAG_AWARE_PROMPT`
+  - `bugzooka/integrations/slack_fetcher.py`: integrates RAG into implications when available
+  - `kustomize/overlays/rag/*`: RAG sidecar overlay and volume wiring
+
+
 ### **MCP Servers**
 MCP servers can be integrated by adding a simple configuration in `mcp_config.json` file in the root directory.
 
