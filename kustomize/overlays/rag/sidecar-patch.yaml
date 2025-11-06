@@ -15,19 +15,23 @@ spec:
               echo "Copying RAG data to shared volume...";
               cp -r /rag/vector_db/* /shared-rag/;
               echo "Done copying RAG data.";
-          envFrom:
-            - secretRef:
-                name: bugzooka-env
           volumeMounts:
             - name: rag-db
               mountPath: /shared-rag
       containers:
         - name: bugzooka
+          envFrom:
+            - secretRef:
+                name: bugzooka-env
           env:
             - name: PRODUCT
               value: "openshift"
             - name: CI
               value: "prow"
+            - name: ENABLE_INFERENCE
+              value: "true"
+            - name: RAG_DB_PATH
+              value: "/rag"
           volumeMounts:
             - name: rag-db
               mountPath: /rag

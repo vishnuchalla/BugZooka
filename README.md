@@ -146,6 +146,7 @@ BugZooka can optionally enrich its “Implications to understand” output with 
     - [BYOK Tooling HOWTO](https://github.com/openshift/lightspeed-rag-content/tree/main/byok#byok-tooling-howto)
   - Run `make deploy`. The Makefile will apply the RAG overlay and mount a shared volume at `/rag`.
   - Note: The BYOK image is intended to be used as an initContainer to prepare the vector store. In this repository, the provided overlay runs it as a sidecar; both patterns are supported for preparing/serving `/rag`.
+  - For local testing without a cluster, place your RAG content under `/rag`; BugZooka will auto-detect it.
 
 - Behavior and fallback:
   - If no RAG artifacts are detected, analysis proceeds unchanged.
