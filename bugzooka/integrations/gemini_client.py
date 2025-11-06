@@ -2,11 +2,15 @@ import logging
 import os
 import ssl
 import httpx
+import json
+import asyncio
 
 from openai import OpenAI
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from bugzooka.core.constants import (
     INFERENCE_MAX_TOKENS,
     INFERENCE_TEMPERATURE,
+    INFERENCE_MAX_TOOL_ITERATIONS,
 )
 from bugzooka.integrations.inference import InferenceAPIUnavailableError
 
@@ -90,18 +94,79 @@ class GeminiClient:
             ) from e
 
 
-def analyze_log_with_gemini(
-    product: str, product_config: dict, error_summary: str, model="gemini-2.0-flash"
+def convert_langchain_tools_to_openai_format(langchain_tools):
+    """
+    Convert LangChain tools to OpenAI function calling format using LangChain's built-in converter.
+
+    :param langchain_tools: List of LangChain StructuredTool objects
+    :return: List of tool definitions in OpenAI format
+    """
+    openai_tools = [convert_to_openai_tool(tool) for tool in langchain_tools]
+    return openai_tools
+
+
+async def execute_tool_call(tool_name, tool_args, available_tools):
+    """
+    Execute a tool call by finding and invoking the appropriate LangChain tool.
+    Handles both sync and async tools.
+
+    :param tool_name: Name of the tool to execute
+    :param tool_args: Dictionary of arguments for the tool
+    :param available_tools: List of available LangChain tools
+    :return: Tool execution result as string
+    """
+    # Find the tool by name
+    tool = next((t for t in available_tools if t.name == tool_name), None)
+
+    if not tool:
+        error_msg = f"Tool '{tool_name}' not found in available tools"
+        logger.error(error_msg)
+        return f"Error: {error_msg}"
+
+    try:
+        logger.info("Executing tool: %s with args: %s", tool_name, tool_args)
+
+        # Check if the tool is async (has coroutine attribute or ainvoke method)
+        if hasattr(tool, 'coroutine') and tool.coroutine:
+            # MCP tools have a coroutine attribute
+            result = await tool.ainvoke(tool_args)
+        elif hasattr(tool, 'ainvoke'):
+            # Some tools have ainvoke method
+            result = await tool.ainvoke(tool_args)
+        else:
+            # Synchronous tool
+            result = tool.invoke(tool_args)
+
+        logger.info("Tool execution successful: %s", tool_name)
+        return str(result)
+    except Exception as e:
+        error_msg = f"Error executing tool '{tool_name}': {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return f"Error: {error_msg}"
+
+
+async def analyze_log_with_gemini(
+    product: str,
+    product_config: dict,
+    error_summary: str,
+    model="gemini-2.0-flash",
+    tools=None,
+    max_iterations=None
 ):
     """
-    Analyzes log summaries using Gemini API with product-specific prompts.
+    Analyzes log summaries using Gemini API with product-specific prompts and optional tool calling.
 
     :param product: Product name (e.g., "OPENSHIFT", "ANSIBLE", or "GENERIC")
     :param product_config: Config dict with prompt, endpoint, token, and model info
     :param error_summary: Error summary text to analyze
     :param model: Gemini model to use (default: gemini-2.0-flash)
+    :param tools: List of LangChain tools available for Gemini to call (optional)
+    :param max_iterations: Maximum number of tool calling iterations (default: INFERENCE_MAX_TOOL_ITERATIONS)
     :return: Analysis result from Gemini
     """
+    if max_iterations is None:
+        max_iterations = INFERENCE_MAX_TOOL_ITERATIONS
+
     try:
         gemini_client = GeminiClient()
 
@@ -119,17 +184,102 @@ def analyze_log_with_gemini(
             {"role": "assistant", "content": prompt_config["assistant"]},
         ]
 
-        response = gemini_client.chat_completions_create(
-            messages=messages,
-            model=model,
-            max_tokens=INFERENCE_MAX_TOKENS,
-            temperature=INFERENCE_TEMPERATURE,
-        )
+        # Convert LangChain tools to OpenAI format if provided
+        openai_tools = None
+        if tools:
+            openai_tools = convert_langchain_tools_to_openai_format(tools)
+            logger.info("Enabled %d tools for Gemini: %s",
+                       len(openai_tools),
+                       [t["function"]["name"] for t in openai_tools])
 
-        return response.choices[0].message.content
+        # Tool calling loop - iterate until we get a final answer or hit max iterations
+        iteration = 0
+        while iteration < max_iterations:
+            iteration += 1
+
+            # Call Gemini API
+            api_kwargs = {
+                "messages": messages,
+                "model": model,
+                "max_tokens": INFERENCE_MAX_TOKENS,
+                "temperature": INFERENCE_TEMPERATURE,
+            }
+
+            # Only add tools if they exist
+            if openai_tools:
+                api_kwargs["tools"] = openai_tools
+
+            response = gemini_client.chat_completions_create(**api_kwargs)
+
+            response_message = response.choices[0].message
+
+            # Check if Gemini wants to call tools
+            tool_calls = getattr(response_message, 'tool_calls', None)
+
+            if not tool_calls:
+                # No tool calls - we have the final answer
+                logger.info("Gemini analysis complete (iteration %d)", iteration)
+                content = response_message.content
+                if content is None:
+                    logger.warning("Gemini returned None content, using empty string")
+                    return ""
+                return content
+
+            # Gemini wants to call tools - execute them
+            logger.info("Gemini requested %d tool call(s)", len(tool_calls))
+
+            # Add the assistant's message with tool calls to conversation
+            messages.append({
+                "role": "assistant",
+                "content": response_message.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    }
+                    for tc in tool_calls
+                ]
+            })
+
+            # Execute each tool call and add results to messages
+            for tool_call in tool_calls:
+                function_name = tool_call.function.name
+                try:
+                    function_args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError as e:
+                    logger.error("Failed to parse tool arguments: %s", e)
+                    function_result = f"Error: Invalid JSON arguments - {str(e)}"
+                else:
+                    # Execute the tool (await since it's now async)
+                    function_result = await execute_tool_call(
+                        function_name,
+                        function_args,
+                        tools
+                    )
+
+                # Add tool result to messages
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": function_name,
+                    "content": function_result
+                })
+
+            # Continue loop to let Gemini process tool results
+
+        # If we hit max iterations without a final answer
+        logger.warning(
+            "Reached maximum tool calling iterations (%d) without final answer",
+            max_iterations
+        )
+        return "Analysis incomplete: Maximum tool calling iterations reached. Please try again with a simpler query."
 
     except Exception as e:
-        logger.error("Error analyzing %s log with Gemini: %s", product, e.__cause__)
+        logger.error("Error analyzing %s log with Gemini: %s", product, str(e))
         raise InferenceAPIUnavailableError(
             f"Error analyzing {product} log with Gemini: {str(e)}"
         ) from e
