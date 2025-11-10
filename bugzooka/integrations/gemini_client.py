@@ -12,6 +12,7 @@ from bugzooka.core.constants import (
     INFERENCE_MAX_TOOL_ITERATIONS,
 )
 from bugzooka.integrations.inference import InferenceAPIUnavailableError
+from bugzooka.analysis.prompts import JIRA_TOOL_PROMPT
 
 
 logger = logging.getLogger(__name__)
@@ -344,8 +345,14 @@ async def analyze_log_with_gemini(
 
         logger.debug("Error summary: %s", error_summary[:150] + "..." if len(error_summary) > 150 else error_summary)
 
+        # Append Jira prompt if Jira MCP tools are available
+        system_prompt = prompt_config["system"]
+        if tools and any(getattr(t, "name", "") == "search_jira_issues" for t in tools):
+            logger.info("Jira MCP tools detected - injecting Jira prompt")
+            system_prompt += JIRA_TOOL_PROMPT["system"]
+
         messages = [
-            {"role": "system", "content": prompt_config["system"]},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": formatted_content},
             {"role": "assistant", "content": prompt_config["assistant"]},
         ]
