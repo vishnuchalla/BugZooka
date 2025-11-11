@@ -3,6 +3,7 @@ Slack Socket Mode integration for real-time event listening.
 This integration uses WebSockets to listen for @ mentions of the bot in real-time.
 Mentions are processed asynchronously using a thread pool for concurrent handling.
 """
+import asyncio
 import concurrent.futures
 import logging
 import signal
@@ -20,6 +21,7 @@ from bugzooka.core.config import (
     SLACK_APP_TOKEN,
     JEDI_BOT_SLACK_USER_ID,
 )
+from bugzooka.analysis.pr_analyzer import analyze_pr_with_gemini
 
 
 class SlackSocketListener:
@@ -103,7 +105,8 @@ class SlackSocketListener:
     def _process_mention(self, event: Dict[str, Any]) -> None:
         """
         Process an @ mention of the bot (core processing logic).
-        Sends greeting message in response to the mention.
+        Checks for "analyze pr: {PR link}" pattern and calls Orion MCP if found.
+        Otherwise sends greeting message.
 
         :param event: Slack event data
         """
@@ -113,14 +116,57 @@ class SlackSocketListener:
         user = event.get("user", "Unknown")
         ts = event.get("ts")
         channel = event.get("channel")
+        text = event.get("text", "")
 
         self.logger.info(f"📩 Processing mention from {user} at ts {ts}")
 
-        # Send simple greeting message
+        # Check if message contains "analyze pr"
+        if "analyze pr" in text.lower():
+            try:
+                # Send initial acknowledgment
+                self.web_client.chat_postMessage(
+                    channel=channel,
+                    text="🔍 Analyzing PR performance... This may take a moment.",
+                    thread_ts=ts,
+                )
+                
+                # Analyze PR from text (need to run async function in sync context)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    analysis_result = loop.run_until_complete(
+                        analyze_pr_with_gemini(text)
+                    )
+                finally:
+                    loop.close()
+                
+                # Send the result
+                self.web_client.chat_postMessage(
+                    channel=channel,
+                    text=analysis_result["message"],
+                    thread_ts=ts,
+                )
+                
+                if analysis_result["success"]:
+                    org, repo, pr_number, version = analysis_result["pr_info"]
+                    self.logger.info(f"✅ Sent PR analysis for {org}/{repo}#{pr_number} (OpenShift {version}) to {user}")
+                else:
+                    self.logger.warning(f"⚠️ PR analysis failed: {analysis_result['message']}")
+                    
+            except Exception as e:
+                self.logger.error(f"Error processing PR summarization: {e}", exc_info=True)
+                self.web_client.chat_postMessage(
+                    channel=channel,
+                    text=f"❌ Unexpected error: {str(e)}",
+                    thread_ts=ts,
+                )
+            return
+
+        # Default: Send simple greeting message
         try:
             self.web_client.chat_postMessage(
                 channel=channel,
-                text="Hello from PerfScale Jedi",
+                text="May the force be with you! :performance_jedi:\n\n💡 *Tip:* Try mentioning me with `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` to get performance analysis!",
                 thread_ts=ts,
             )
             self.logger.info(f"✅ Sent greeting to {user}")
