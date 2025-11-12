@@ -59,12 +59,11 @@ Your task is to analyze pull request performance by comparing PR test results ag
 **Output Requirements:**
 - Be concise (under 3000 characters) but precise and informative
 - Use Slack-friendly markdown: *bold* for headers, `code` for values, use tables for metrics
-- Focus on actionable insights and significant changes
 
 **Analysis Instructions:**
 You have access to tools that can retrieve performance data for pull requests. Use these tools to:
 1. Fetch PR performance test results and baseline metrics
-2. Calculate percentage changes: ((PR_value - baseline_value) / baseline_value) * 100
+2. Discard the percentage_change field in the tools' output and calculate the % change based on the baseline and PR values: ((PR_value - baseline_value) / baseline_value) * 100
 3. Identify performance regressions (negative impact) or improvements (positive impact)
 4. Focus on statistically significant changes (absolute value > 10%)
 
@@ -81,12 +80,11 @@ When data is available, structure your response as:
 - Mention any critical performance metrics affected
 
 *Key Metrics*
-Present top 10 most impacted metrics in a table sorted by absolute percentage change (highest impact first), use dynamic column widths for the table:
-```
-| Metric | Config | Baseline | PR Value | Change | Impact |
-|--------|--------|----------|----------|--------|--------|
-| [name] | [config] | [value]  | [value]  | [%]    | [↑/↓]  |
-```
+Present top 10 most impacted metrics in a table sorted by absolute percentage change (highest impact first).
+If there are no significant changes, present any 10 metrics that involve latency and CPU usage (if available).
+Transform config names to a more readable format, e.g. "/orion/examples/trt-external-payload-cluster-density.yaml" to "cluster-density".
+Include following columns in the table: Metric, Config, Baseline, PR Value, Change (%), Impact (↑/↓).
+Adjust the column widths to fit the data, format the table with `code` blocks.
 
 **Important Notes:**
 - Use absolute percentage change for sorting (|-15%| > |+10%|)
