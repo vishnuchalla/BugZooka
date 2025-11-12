@@ -127,12 +127,41 @@ class SlackSocketListener(SlackClientBase):
                 finally:
                     loop.close()
                 
-                # Send the result
-                self.client.chat_postMessage(
-                    channel=channel,
-                    text=f":robot_face: *PR Performance Analysis (AI generated)*\n\n{analysis_result['message']}",
-                    thread_ts=ts,
-                )
+                # Split the result by "====" separator and send each part as a separate message
+                message_content = analysis_result['message']
+                separator = "=" * 80  # 80 equals signs
+                
+                # Check if separator exists in the message
+                if separator in message_content:
+                    # Split by separator
+                    sections = message_content.split(separator)
+                    
+                    # Send first section with the header
+                    if sections:
+                        first_section = sections[0].strip()
+                        self.client.chat_postMessage(
+                            channel=channel,
+                            text=f":robot_face: *PR Performance Analysis (AI generated)*\n\n{first_section}",
+                            thread_ts=ts,
+                        )
+                    
+                    # Send remaining sections (tables) as separate messages
+                    for i, section in enumerate(sections[1:], start=1):
+                        section = section.strip()
+                        if section:  # Only send non-empty sections
+                            self.client.chat_postMessage(
+                                channel=channel,
+                                text=section,
+                                thread_ts=ts,
+                            )
+                            self.logger.debug(f"Sent section {i} of PR analysis")
+                else:
+                    # No separator found, send everything in one message
+                    self.client.chat_postMessage(
+                        channel=channel,
+                        text=f":robot_face: *PR Performance Analysis (AI generated)*\n\n{message_content}",
+                        thread_ts=ts,
+                    )
                 
                 if analysis_result["success"]:
                     org, repo, pr_number, version = analysis_result["pr_info"]

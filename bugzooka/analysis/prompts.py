@@ -63,9 +63,9 @@ Your task is to analyze pull request performance by comparing PR test results ag
 **Analysis Instructions:**
 You have access to tools that can retrieve performance data for pull requests. Use these tools to:
 1. Fetch PR performance test results and baseline metrics
-2. Discard the percentage_change field in the tools' output and calculate the % change based on the baseline and PR values: ((PR_value - baseline_value) / baseline_value) * 100
+2. Transform config names to a more readable format, e.g. "/orion/examples/trt-external-payload-cluster-density.yaml" to "cluster-density".
 3. Identify performance regressions (negative impact) or improvements (positive impact)
-4. Focus on statistically significant changes (absolute value > 10%)
+4. Focus on statistically significant changes (absolute value => 10%) and moderate changes (absolute value => 5%)
 
 **CRITICAL - No Data Handling:**
 If the tool returns empty data, errors, or indicates no performance test data is available, respond with EXACTLY:
@@ -75,20 +75,24 @@ If the tool returns empty data, errors, or indicates no performance test data is
 When data is available, structure your response as:
 
 *Performance Analysis Summary*
-[One sentence overall verdict: regression/improvement/neutral]
-- Highlight changes (>10%) with ⚠️
-- Mention any critical performance metrics affected
+- Provide overall summary of the performance analysis: regression (at least one significant regression found)/improvement (at least one significant improvement found)/neutral (no significant regressions or improvements found).
+- For latency metrics (e.g. latency, p99, p95, p90, p50), a regression is a relative increase and an improvement is a relativedecrease
+- For resource usage metrics (e.g. CPU, memory, disk, network), a regression is a relative increase and an improvement is a relative decrease
+- Highlight significant regressions (absolute value => 10%) with 🛑 and mention the metric name and config name. If none are found, skip this section.
+- Highlight moderate regressions (absolute value => 5%) with ⚠️ and mention the metric name and config name. If none are found, skip this section.
+- Mention significant improvements (absolute value => 10%) with 🚀 and mention the metric name and config name. If none are found, skip this section.
+- Mention moderate improvements (absolute value => 5%) with ✅ and mention the metric name and config name. If none are found, skip this section.
+- Each section should be on a new line.
 
-*Key Metrics*
-Present top 10 most impacted metrics in a table sorted by absolute percentage change (highest impact first).
-If there are no significant changes, present any 10 metrics that involve latency and CPU usage (if available).
-Transform config names to a more readable format, e.g. "/orion/examples/trt-external-payload-cluster-density.yaml" to "cluster-density".
-Include following columns in the table: Metric, Config, Baseline, PR Value, Change (%), Impact (↑/↓).
-Adjust the column widths to fit the data, format the table with `code` blocks.
+*Most Impacted Metrics*
+Present top 10 most impacted metrics in a table sorted by absolute percentage change (highest impact first). Do not use emojis in the table.
+Include following columns in the table: Metric, Baseline, PR Value, Change (%), Impact (↑/↓).
+Provide one table per config in the output. Use the readable config name as the table header and make it bold, e.g. *Config: cluster-density*.
+Adjust the column widths to fit the data, format each table with `code` blocks.
+Insert a separator with 80 equals signs between each config section.
 
 **Important Notes:**
 - Use absolute percentage change for sorting (|-15%| > |+10%|)
-- Mark regressions clearly as they require attention
 - If only partial data is available, analyze what's present and note the limitation
 """,
     "user": """Please analyze the performance of this pull request:
