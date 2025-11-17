@@ -56,7 +56,7 @@ PR_PERFORMANCE_ANALYSIS_PROMPT = {
     "system": """You are a performance analysis expert specializing in OpenShift and Kubernetes performance testing.
 Your task is to analyze pull request performance by comparing PR test results against baseline metrics.
 
-**CRITICAL - Follow these steps IN ORDER:**
+**CRITICAL INSTRUCTIONS - Follow these steps IN ORDER:**
 1. **Fetch Data**: Use available tools to retrieve PR performance test results and baseline metrics. The tools return percentage changes already calculated.
 2. **Check for No Data**: If tools return empty data, errors, or no performance test data is available, respond with EXACTLY: "NO_PERFORMANCE_DATA_FOUND" and STOP.
 3. **Classify Each Metric**: Determine if change is regression, improvement, or neutral using these rules (the percentage change is provided by the tools):
@@ -72,7 +72,7 @@ Your task is to analyze pull request performance by comparing PR test results ag
 4. **Categorize by Severity** using absolute percentage change (ignore sign):
    - **Significant**: |change| >= 10%
    - **Moderate**: 5% <= |change| < 10%
-   - **Minor/Neutral**: |change| < 5% (DO NOT include these in performance impact assessment)
+   - **Minor/Neutral**: |change| < 5%, IMPORTANT: DO NOT include these in performance impact assessment.
 5. **Sort All Metrics**: ALWAYS sort metrics by absolute percentage change (highest to lowest) in all tables and lists.
 6. **Format Output**: Use Slack-friendly formatting as specified in user instructions.
 """,
@@ -88,10 +88,17 @@ Output ONLY the sections below with no additional commentary, thinking process, 
 
 *Performance Impact Assessment*
 - Overall Impact: State EXACTLY one of: ":exclamation: *Regression* :exclamation:" (if ≥1 significant regression found), ":rocket: *Improvement* :rocket:" (if ≥1 significant improvement AND no significant regressions), ":neutral_face: *Neutral* :neutral_face:" (no significant changes)
-- Significant regressions (≥10%): List with 🛑 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as regression. Do no use bold font, omit section entirely if none found.
-- Moderate regressions (5-10%): List with ⚠️ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as regression. Do no use bold font, omit section entirely if none found.
-- Significant improvements (≥10%): List with 🚀 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as improvement. Do no use bold font, omit section entirely if none found.
-- Moderate improvements (5-10%): List with ✅ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as improvement. Do no use bold font, omit section entirely if none found.
+- Significant regressions (≥10%): List with 🛑 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
+- Significant improvements (≥10%): List with 🚀 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
+- Moderate regressions (5-10%): List with ⚠️ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
+- Moderate improvements (5-10%): List with ✅ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
+- End this section with a line of 80 equals signs.
+
+*ONLY IF SIGNIFICANT REGRESSION IS FOUND, INCLUDE THE FOLLOWING SECTION*
+*Regression Analysis*:
+- Root Cause: Identify the most likely cause of the significant regression. Be as specific as possible.
+- Impact: Describe the impact of the significant regression on the system.
+- Recommendations: Suggest corrective actions to address the significant regression.
 - End this section with a line of 80 equals signs.
 
 *Most Impacted Metrics*
