@@ -122,10 +122,12 @@ async def analyze_pr_with_gemini(text: str) -> dict:
             pr_url=pr_url,
             version=version
         )
+        assistant_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["assistant"]
 
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
+            {"role": "assistant", "content": assistant_prompt},
         ]
 
         # Use the generic agentic loop from gemini_client

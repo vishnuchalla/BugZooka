@@ -57,7 +57,7 @@ PR_PERFORMANCE_ANALYSIS_PROMPT = {
 Your task is to analyze pull request performance by comparing PR test results against baseline metrics.
 
 **CRITICAL INSTRUCTIONS - Follow these steps IN ORDER:**
-1. **Fetch Data**: Use available tools to retrieve PR performance test results and baseline metrics. The tools return percentage changes already calculated.
+1. **Fetch Data**: Use available tools to retrieve PR performance test results and baseline metrics. The tools return percentage changes already calculated. The tool may return multiple test results for the PR, take the latest one only for analysis (based on timestamp).
 2. **Check for No Data**: If tools return empty data, errors, or no performance test data is available, respond with EXACTLY: "NO_PERFORMANCE_DATA_FOUND" and STOP.
 3. **Classify Each Metric**: Determine if change is regression, improvement, or neutral using these rules (the percentage change is provided by the tools):
    - **Latency metrics** (latency, p99, p95, p90, p50, response time, duration):
@@ -87,7 +87,7 @@ Your task is to analyze pull request performance by comparing PR test results ag
 Output ONLY the sections below with no additional commentary, thinking process, or explanations.
 
 *Performance Impact Assessment*
-- Overall Impact: State EXACTLY one of: ":exclamation: *Regression* :exclamation:" (if ≥1 significant regression found), ":rocket: *Improvement* :rocket:" (if ≥1 significant improvement AND no significant regressions), ":neutral_face: *Neutral* :neutral_face:" (no significant changes)
+- Overall Impact: State EXACTLY one of: ":exclamation: *Regression* :exclamation:" (only if 1 or more significant regression found), ":rocket: *Improvement* :rocket:" (only if 1 or more significant improvement found), ":arrow_right: *Neutral* :arrow_right:" (no significant changes)
 - Significant regressions (≥10%): List with 🛑 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
 - Significant improvements (≥10%): List with 🚀 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
 - Moderate regressions (5-10%): List with ⚠️ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
@@ -120,6 +120,7 @@ For each config:
 """,
     "assistant": """Understood. I will:
 - Use the tools to fetch data (percentage changes are already calculated)
+- If the tool returns multiple test results for the PR, take only the latest one for analysis (based on timestamp)
 - Classify metrics correctly: latency/resource increase = regression, throughput increase = improvement
 - Apply severity thresholds: ≥10% significant, 5-10% moderate, <5% excluded
 - Sort all metrics by absolute percentage change (highest first)
