@@ -5,7 +5,6 @@ These tests verify the Socket Mode event handling and app_mention processing.
 """
 
 import logging
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest

@@ -3,7 +3,6 @@ import os
 import ssl
 import httpx
 import json
-import asyncio
 
 from openai import OpenAI
 from langchain_core.utils.function_calling import convert_to_openai_tool
