@@ -99,6 +99,7 @@ Mention the bot in Slack with the following format:
 ```
 @BugZooka analyze pr: https://github.com/org/repo/pull/123, compare with 4.19
 ```
+For local testing, see [Orion-MCP](https://github.com/jtaleric/orion-mcp) for instructions on how to run orion-mcp.
 
 ## **Configurables**
 This tool monitors a slack channel and uses AI to provide replies to CI failure messages. Also it operates as a singleton instance.

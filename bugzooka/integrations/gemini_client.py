@@ -84,6 +84,14 @@ class GeminiClient:
                 model=model, messages=messages, **kwargs
             )
             
+            # Log token usage information
+            if hasattr(response, 'usage') and response.usage:
+                usage = response.usage
+                logger.info("📊 Token usage - Prompt: %d, Completion: %d, Total: %d",
+                           usage.prompt_tokens, usage.completion_tokens, usage.total_tokens)
+            else:
+                logger.debug("No usage information available in response")
+            
             logger.debug("Gemini API call successful")
             return response
         except Exception as e:
