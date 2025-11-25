@@ -72,7 +72,6 @@ Your task is to analyze pull request performance by comparing PR test results ag
 4. **Categorize by Severity** using absolute percentage change (ignore sign):
    - **Significant**: |change| >= 10%
    - **Moderate**: 5% <= |change| < 10%
-   - **Minor/Neutral**: |change| < 5%, IMPORTANT: DO NOT include these in performance impact assessment.
 5. **Sort All Metrics**: ALWAYS sort metrics by absolute percentage change (highest to lowest) in all tables and lists.
 6. **Format Output**: Use Slack-friendly formatting as specified in user instructions.
 """,
@@ -96,10 +95,10 @@ Output ONLY the sections below with no additional commentary, thinking process, 
 
 *ONLY IF SIGNIFICANT REGRESSION IS FOUND, INCLUDE THE FOLLOWING SECTION*
 *Regression Analysis*:
-- Root Cause: Identify the most likely cause of the significant regression. Be as specific as possible.
-- Impact: Describe the impact of the significant regression on the system.
-- Recommendations: Suggest corrective actions to address the significant regression.
-- End this section with a line of 80 equals signs.
+1. Root Cause: Identify the most likely cause of the significant regression. Be as specific as possible.
+2. Impact: Describe the impact of the significant regression on the system.
+3. Recommendations: Suggest corrective actions to address the significant regression.
+End this section with a line of 80 equals signs.
 
 *Most Impacted Metrics*
 For each config:
@@ -115,14 +114,13 @@ For each config:
 - The tools provide percentage changes - use them as provided
 - CHECK thresholds (5% and 10%) before categorizing
 - SORT by absolute percentage change (highest first) - this is mandatory
-- DO NOT include changes < 5% in the Performance Impact Assessment
 - DO NOT include any thinking process, explanations, or meta-commentary - output ONLY the required format
 """,
     "assistant": """Understood. I will:
 - Use the tools to fetch data (percentage changes are already calculated)
 - If the tool returns multiple test results for the PR, take only the latest one for analysis (based on timestamp)
 - Classify metrics correctly: latency/resource increase = regression, throughput increase = improvement
-- Apply severity thresholds: ≥10% significant, 5-10% moderate, <5% excluded
+- Apply severity thresholds: ≥10% significant, 5-10% moderate
 - Sort all metrics by absolute percentage change (highest first)
 - Output ONLY the required format with no explanations or process descriptions
 
