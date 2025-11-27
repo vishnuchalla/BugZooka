@@ -27,7 +27,7 @@ spec:
         app.kubernetes.io/name: orion-mcp 
     spec:
       containers:
-      - image: quay.io/jtaleric/orion-mcp
+      - image: ${ORION_MCP_IMAGE}
         imagePullPolicy: Always
         name: mcp 
         env:
