@@ -10,7 +10,7 @@ data:
     {
       "mcp_servers": {
         "orion_mcp_server": {
-          "url": "http://orion-mcp.${BUGZOOKA_NAMESPACE}:3030/mcp",
+          "url": "http://orion-mcp.orion-mcp:3030/mcp",
           "transport": "streamable_http"
         }
       }

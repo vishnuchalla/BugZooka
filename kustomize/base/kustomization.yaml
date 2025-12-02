@@ -4,15 +4,13 @@ kind: Kustomization
 namespace: ${BUGZOOKA_NAMESPACE}
 
 resources:
-  - namespace.yaml
+  #- namespace.yaml
   - secret-quay.yaml
   - serviceaccount-patch.yaml
   - imagestream.yaml
   - configmap-prompts.yaml
   - configmap-mcp-config.yaml
   - deployment.yaml
-  - deployment-orion-mcp.yaml
-  - service-orion-mcp.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
