@@ -4,7 +4,7 @@ kind: Kustomization
 namespace: ${BUGZOOKA_NAMESPACE}
 
 resources:
-  #- namespace.yaml
+  - namespace.yaml
   - secret-quay.yaml
   - serviceaccount-patch.yaml
   - imagestream.yaml
