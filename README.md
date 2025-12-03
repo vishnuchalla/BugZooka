@@ -208,6 +208,39 @@ BugZooka can optionally enrich its “Implications to understand” output with 
   - `kustomize/overlays/rag/*`: RAG sidecar overlay and volume wiring
 
 
+### **Chatbot Mode / Slack Socket Listener (Optional)**
+BugZooka can operate in chatbot mode using Slack Socket Mode for real-time event listening via WebSockets. In this mode, the bot responds to @mentions in real-time on top of polling for messages.
+
+- What it does:
+  - Establishes a persistent WebSocket connection to Slack using Socket Mode.
+  - Listens for @mentions of the bot in the configured channel.
+  - Processes mentions asynchronously using a thread pool for concurrent handling.
+  - Supports interactive PR analysis when mentioned with `analyze pr: <GitHub PR URL>`.
+  - Provides instant visual feedback (👀 reaction) when processing mentions.
+
+- Enable via deployment overlay:
+  - Set `CHATBOT=true` env var.
+  - Run `make deploy`. The Makefile will apply the chatbot overlay which sets `ENABLE_SOCKET_MODE=true`.
+  - Alternatively, set `ENABLE_SOCKET_MODE=true` directly in your environment.
+
+- Required environment variables:
+  - `SLACK_APP_TOKEN`: Slack App-Level Token (starts with `xapp-`) for Socket Mode authentication.
+  - `SLACK_BOT_TOKEN`: Standard bot token for posting messages.
+  - `SLACK_CHANNEL_ID`: Channel ID to monitor for mentions.
+
+- Behavior:
+  - When mentioned with `analyze pr: <PR URL>, compare with <version>`, performs AI-powered PR performance analysis.
+  - For other mentions, responds with a friendly greeting and usage tips.
+  - Handles concurrent mentions using a configurable thread pool (default: 5 workers).
+  - Gracefully shuts down on SIGINT/SIGTERM, waiting for pending tasks to complete.
+
+- Files of interest:
+  - `bugzooka/integrations/slack_socket_listener.py`: Socket Mode client implementation
+  - `bugzooka/integrations/slack_client_base.py`: Base class for Slack clients
+  - `bugzooka/analysis/pr_analyzer.py`: PR performance analysis with Gemini+MCP
+  - `kustomize/overlays/chatbot/*`: Chatbot mode overlay configuration
+
+
 ### **MCP Servers**
 MCP servers can be integrated by adding a simple configuration in `mcp_config.json` file in the root directory.
 
@@ -276,17 +309,24 @@ make podman-run  # Requires .env file in project root
 ```
 
 ### **Openshift Deployment**
+BugZooka has a dependency on [orion-mcp service](https://github.com/jtaleric/orion-mcp) which is expected to be deployed in orion-mcp namespace.
 ```bash
 # Expose your ENVs and deploy resources
 export QUAY_CRED='<base64 encoded pull secret>'
 export BUGZOOKA_IMAGE='<bugzooka image tag>'
 export BUGZOOKA_NAMESPACE='<your namespace>'
-export ORION_MCP_IMAGE=='<orion-mcp image tag>'
-export ES_SERVER=='<orion-mcp ES server>'
-kustomize build ./kustomize | envsubst | oc apply -f -
+make deploy
 
 # Cleanup resources
 kustomize build ./kustomize | envsubst | oc delete -f -
+```
+There are several optional envvars for special deployments, set them before running `make deploy`:
+```bash
+# Deploy with BYOK RAG and Slack mentions support
+export RAG_IMAGE='<byok rag image tag>'
+
+# Deploy with Slack mentions support
+export CHATBOT=true
 ```
 
 ## **Development**
@@ -306,36 +346,37 @@ BugZooka/
 │   │   └── utils.py             # Shared utility functions
 │   ├── integrations/            # External service integrations
 │   │   ├── __init__.py
-│   │   ├── slack_fetcher.py     # Slack polling integration
-│   │   ├── slack_socket_listener.py  # Slack Socket Mode (WebSocket) integration
-│   │   ├── slack_client_base.py # Base class for Slack clients
 │   │   ├── gemini_client.py     # Gemini API client with tool calling
+│   │   ├── inference.py         # Generic inference API
 │   │   ├── mcp_client.py        # MCP protocol client implementation
 │   │   ├── rag_client_util.py   # RAG vector store utilities
-│   │   └── inference.py         # Generic inference API
+│   │   ├── slack_client_base.py # Base class for Slack clients
+│   │   ├── slack_fetcher.py     # Slack polling integration
+│   │   └── slack_socket_listener.py  # Slack Socket Mode (WebSocket) integration
 │   └── analysis/                # Log analysis and processing
 │       ├── __init__.py
+│       ├── failure_keywords.py  # Failure pattern detection
+│       ├── jsonparser.py        # JSON parsing utilities
 │       ├── log_analyzer.py      # Main log analysis orchestration
 │       ├── log_summarizer.py    # Log summarization functionality
 │       ├── pr_analyzer.py       # PR performance analysis with Gemini+MCP
+│       ├── prompts.py           # AI prompts and templates
 │       ├── prow_analyzer.py     # Prow-specific CI/CD analysis
-│       ├── failure_keywords.py  # Failure pattern detection
-│       ├── xmlparser.py         # XML parsing for test results
-│       ├── jsonparser.py        # JSON parsing utilities
-│       └── prompts.py           # AI prompts and templates
+│       └── xmlparser.py         # XML parsing for test results
 ├── kustomize/                   # Kubernetes deployment manifests
 │   ├── base/
-│   │   ├── deployment.yaml      # Main BugZooka deployment
-│   │   ├── deployment-orion-mcp.yaml  # orion-mcp server deployment
-│   │   ├── service-orion-mcp.yaml     # orion-mcp service definition
 │   │   ├── configmap-mcp-config.yaml  # MCP configuration
 │   │   ├── configmap-prompts.yaml     # Prompts configuration
+│   │   ├── deployment.yaml      # Main BugZooka deployment
 │   │   ├── imagestream.yaml
 │   │   ├── kustomization.yaml
 │   │   ├── namespace.yaml
 │   │   ├── secret-quay.yaml
 │   │   └── serviceaccount-patch.yaml
 │   └── overlays/
+│       ├── chatbot/             # Chatbot mode deployment overlay
+│       │   ├── env-patch.yaml
+│       │   └── kustomization.yaml
 │       └── rag/                 # RAG-enabled deployment overlay
 │           ├── kustomization.yaml
 │           └── sidecar-patch.yaml
