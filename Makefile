@@ -47,14 +47,17 @@ podman-run:  ## Run podman container
 		-v ./.env:/app/.env:Z \
 		bugzooka:latest
 
-deploy:  ## Deploy to OpenShift (uses overlays/rag if RAG_IMAGE is set in .env)
+deploy:  ## Deploy to OpenShift (uses overlays/rag if RAG_IMAGE provided, overlays/chatbot if CHATBOT is true)
 	@set -a; \
 	if [ -f .env ]; then . ./.env; fi; \
 	set +a; \
 	if [ -n "$$RAG_IMAGE" ]; then \
 		echo "Deploying with RAG overlay (RAG_IMAGE=$$RAG_IMAGE)"; \
 		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/overlays/rag | envsubst | oc apply -f -; \
+	elif [ "$$CHATBOT" = "true" ]; then \
+		echo "Deploying with chatbot overlay"; \
+		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/overlays/chatbot | envsubst | oc apply -f -; \
 	else \
-		echo "Deploying base kustomize (no RAG_IMAGE)"; \
+		echo "Deploying base default overlay"; \
 		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/base | envsubst | oc apply -f -; \
 	fi

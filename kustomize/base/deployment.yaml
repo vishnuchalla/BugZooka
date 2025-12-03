@@ -48,7 +48,7 @@ spec:
             - name: CI
               value: "prow"
             - name: ENABLE_SOCKET_MODE
-              value: "true"
+              value: "false"
           envFrom:
             - secretRef:
                 name: bugzooka-env
