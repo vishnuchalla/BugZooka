@@ -28,18 +28,15 @@ class SlackSocketListener(SlackClientBase):
     Listens for @ mentions of the bot and processes messages asynchronously in real-time.
     """
 
-    def __init__(
-        self, channel_id: str, logger: logging.Logger, max_workers: int = 5
-    ):
+    def __init__(self, logger: logging.Logger, max_workers: int = 5):
         """
-        Initialize Socket Mode client and channel details.
+        Initialize Socket Mode client.
 
-        :param channel_id: Slack channel ID to monitor
         :param logger: Logger instance
         :param max_workers: Maximum number of concurrent mention handlers (default: 5)
         """
-        # Initialize base class (handles WebClient, channel_id, logger, running flag, signal handler)
-        super().__init__(channel_id, logger)
+        # Initialize base class (handles WebClient, logger, running flag, signal handler)
+        super().__init__(logger)
 
         self.slack_app_token = SLACK_APP_TOKEN
 
@@ -66,20 +63,13 @@ class SlackSocketListener(SlackClientBase):
     def _should_process_message(self, event: Dict[str, Any]) -> bool:
         """
         Determine if a message should be processed.
-        Only process messages that mention the bot and are in the configured channel.
+        Only process app_mention events not sent by the bot itself.
 
         :param event: Slack event data
         :return: True if message should be processed
         """
         # Only process app_mention events
         if event.get("type") != "app_mention":
-            return False
-
-        # Check if it's in the right channel
-        if event.get("channel") != self.channel_id:
-            self.logger.debug(
-                f"Ignoring mention in different channel: {event.get('channel')}"
-            )
             return False
 
         # Don't process messages from the bot itself
@@ -277,15 +267,8 @@ class SlackSocketListener(SlackClientBase):
 
         :param kwargs: Configuration arguments (not used, for compatibility)
         """
-        self.logger.info(
-            f"🚀 Starting Slack Socket Mode Listener for Channel: {self.channel_id}"
-        )
-        self.logger.info(
-            "Bot will respond to @ mentions with a simple greeting message"
-        )
-        self.logger.info(
-            f"Async processing enabled with {self.executor._max_workers} worker threads"
-        )
+        self.logger.info("🚀 Starting Slack Socket Mode Listener")
+        self.logger.info(f"Async processing enabled with {self.executor._max_workers} worker threads")
 
         # Register the event handler
         self.socket_client.socket_mode_request_listeners.append(

@@ -18,12 +18,12 @@ class SlackClientBase:
     Provides common initialization, message formatting, and utility methods.
     """
 
-    def __init__(self, channel_id: str, logger: logging.Logger):
+    def __init__(self, logger: logging.Logger, channel_id: str = None):
         """
         Initialize Slack client with common configuration.
 
-        :param channel_id: Slack channel ID to monitor/post to
         :param logger: Logger instance
+        :param channel_id: Optional Slack channel ID to monitor/post to
         """
         self.slack_bot_token = SLACK_BOT_TOKEN
         self.channel_id = channel_id
