@@ -44,8 +44,8 @@ class SlackMessageFetcher(SlackClientBase):
 
     def __init__(self, channel_id, logger, poll_interval=600):
         """Initialize Slack client and channel details."""
-        # Initialize base class (handles WebClient, channel_id, logger, running flag, signal handler)
-        super().__init__(channel_id, logger)
+        # Initialize base class (handles WebClient, logger, channel_id, running flag, signal handler)
+        super().__init__(logger, channel_id)
         
         self.poll_interval = poll_interval  # How often to fetch messages
         self.last_seen_timestamp = None  # Track the latest message timestamp

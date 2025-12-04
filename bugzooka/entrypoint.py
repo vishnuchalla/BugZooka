@@ -84,7 +84,7 @@ def main() -> None:
     if args.enable_socket_mode:
 
         logger.info("Starting Socket Mode (WebSocket) for responding to @ mentions")
-        listener = SlackSocketListener(channel_id=SLACK_CHANNEL_ID, logger=logger)
+        listener = SlackSocketListener(logger=logger)
 
         # Start socket listener in a separate thread
         socket_thread = threading.Thread(

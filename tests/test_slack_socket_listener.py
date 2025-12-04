@@ -79,21 +79,20 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                listener = SlackSocketListener(logger=logger)
 
-                assert listener.channel_id == CHANNEL_ID
                 assert listener.logger == logger
                 assert listener.running is True
                 mock_socket_mode_client.assert_called_once()
                 mock_web_client.assert_called_once()
 
     def test_should_process_app_mention(self, mock_socket_mode_client, mock_web_client):
-        """Test that app_mention events in the correct channel are processed."""
+        """Test that app_mention events are processed."""
         logger = logging.getLogger("test")
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                listener = SlackSocketListener(logger=logger)
 
                 event = create_app_mention_event(
                     text="<@UBOTID> analyze this failure",
@@ -102,15 +101,15 @@ class TestSlackSocketListener:
 
                 assert listener._should_process_message(event) is True
 
-    def test_should_not_process_wrong_channel(
+    def test_should_process_any_channel(
         self, mock_socket_mode_client, mock_web_client
     ):
-        """Test that mentions in other channels are ignored."""
+        """Test that mentions in any channel are processed."""
         logger = logging.getLogger("test")
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                listener = SlackSocketListener(logger=logger)
 
                 event = create_app_mention_event(
                     text="<@UBOTID> analyze this failure",
@@ -118,7 +117,7 @@ class TestSlackSocketListener:
                 )
                 event["channel"] = "C_DIFFERENT_CHANNEL"
 
-                assert listener._should_process_message(event) is False
+                assert listener._should_process_message(event) is True
 
     def test_should_not_process_bot_self_mention(
         self, mock_socket_mode_client, mock_web_client
@@ -129,7 +128,7 @@ class TestSlackSocketListener:
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 with patch("bugzooka.integrations.slack_socket_listener.JEDI_BOT_SLACK_USER_ID", "UBOTID"):
-                    listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                    listener = SlackSocketListener(logger=logger)
 
                     event = create_app_mention_event(
                         text="<@UBOTID> analyze this failure",
@@ -146,7 +145,7 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                listener = SlackSocketListener(logger=logger)
 
                 event = create_app_mention_event(
                     text="<@UBOTID> hello",
@@ -172,7 +171,7 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger, max_workers=2)
+                listener = SlackSocketListener(logger=logger, max_workers=2)
 
                 event = create_app_mention_event(
                     text="<@UBOTID> async test",
@@ -197,7 +196,7 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger, max_workers=2)
+                listener = SlackSocketListener(logger=logger, max_workers=2)
 
                 event = create_app_mention_event(
                     text="<@UBOTID> duplicate test",
@@ -222,7 +221,7 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                listener = SlackSocketListener(logger=logger)
 
                 event = create_app_mention_event(text="<@UBOTID> test", ts="1234567890.123456")
                 socket_request = create_socket_mode_request(event)
@@ -246,7 +245,7 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                listener = SlackSocketListener(logger=logger)
 
                 event = create_app_mention_event(
                     text="<@UBOTID> test",
@@ -275,7 +274,7 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                listener = SlackSocketListener(logger=logger)
 
                 # Create a different event type
                 event = {
@@ -302,7 +301,7 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
+                listener = SlackSocketListener(logger=logger)
 
                 # Mock chat_postMessage to raise an exception
                 mock_web_client.return_value.chat_postMessage.side_effect = Exception(
