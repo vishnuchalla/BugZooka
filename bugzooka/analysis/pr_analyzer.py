@@ -16,6 +16,30 @@ from bugzooka.analysis.prompts import PR_PERFORMANCE_ANALYSIS_PROMPT
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_gemini_output(result: str) -> str:
+    """
+    Sanitize Gemini output by removing any thinking process that precedes
+    the "*Performance Impact Assessment*" marker.
+    
+    :param result: Raw Gemini output
+    :return: Sanitized output starting from the performance assessment marker
+    """
+    marker = "*Performance Impact Assessment*"
+    
+    # Find the marker in the result
+    marker_index = result.find(marker)
+    
+    if marker_index == -1:
+        # Marker not found, return original result
+        logger.debug("Performance Impact Assessment marker not found in output, returning as-is")
+        return result
+    
+    # Return everything from the marker onwards
+    sanitized = result[marker_index:]
+    logger.info("Sanitized output: removed %d characters before marker", marker_index)
+    return sanitized
+
+
 def _parse_pr_request(text: str) -> Optional[Tuple[str, str, str, str]]:
     """
     Parse PR analysis request from text.
@@ -175,9 +199,12 @@ async def analyze_pr_with_gemini(text: str) -> dict:
         
         logger.info("PR analysis completed successfully (%d chars)", len(result))
         
+        # Sanitize output to remove any thinking process before the performance assessment marker
+        sanitized_result = _sanitize_gemini_output(result)
+        
         return {
             "success": True,
-            "message": result,
+            "message": sanitized_result,
             "pr_info": (org, repo, pr_number, version)
         }
 
