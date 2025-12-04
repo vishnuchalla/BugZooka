@@ -83,7 +83,7 @@ Your task is to analyze pull request performance by comparing PR test results ag
 - OpenShift Version: {version}
 
 **Required Output Structure:**
-Output ONLY the sections below with no additional commentary, thinking process, or explanations.
+Output ONLY the sections below with ABSOLUTELY NO additional commentary, thinking process, or meta-commentary.
 
 *Performance Impact Assessment*
 - Overall Impact: State EXACTLY one of: ":exclamation: *Regression* :exclamation:" (only if 1 or more significant regression found), ":rocket: *Improvement* :rocket:" (only if 1 or more significant improvement found), ":arrow_right: *Neutral* :arrow_right:" (no significant changes)
@@ -114,7 +114,7 @@ For each config:
 - The tools provide percentage changes - use them as provided
 - CHECK thresholds (5% and 10%) before categorizing
 - SORT by absolute percentage change (highest first) - this is mandatory
-- DO NOT include any thinking process, explanations, or meta-commentary - output ONLY the required format
+- DO NOT include any thinking process, explanations, or meta-commentary - output ONLY the required format with ABSOLUTELY NO additional commentary, thinking process, or meta-commentary.
 """,
     "assistant": """Understood. I will:
 - Use the tools to fetch data (percentage changes are already calculated)
