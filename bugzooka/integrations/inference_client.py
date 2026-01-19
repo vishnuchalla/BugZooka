@@ -99,8 +99,8 @@ class InferenceClient:
         retry_config: dict,
         verify_ssl: bool = True,
         timeout: float = INFERENCE_API_TIMEOUT_SECONDS,
-        top_p: float = None,
-        frequency_penalty: float = None,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
     ):
         """
         Initialize the inference client.
@@ -152,7 +152,7 @@ class InferenceClient:
         messages: list,
         max_tokens: int = INFERENCE_MAX_TOKENS,
         temperature: float = INFERENCE_TEMPERATURE,
-        tools: list = None,
+        tools: Optional[list] = None,
         **kwargs,
     ):
         """
@@ -186,7 +186,9 @@ class InferenceClient:
             # Add any extra kwargs
             api_kwargs.update(kwargs)
 
-            logger.debug("Calling inference API: %s, Model=%s", self.base_url, self.model)
+            logger.debug(
+                "Calling inference API: %s, Model=%s", self.base_url, self.model
+            )
 
             response = self.client.chat.completions.create(**api_kwargs)
 
@@ -209,7 +211,9 @@ class InferenceClient:
             ) from e
         except httpx.ConnectError as e:
             logger.error("Connection error to inference API: %s", e)
-            raise InferenceAPIUnavailableError("Connection error to inference API") from e
+            raise InferenceAPIUnavailableError(
+                "Connection error to inference API"
+            ) from e
         except Exception as e:
             error_type = type(e).__name__
             error_msg = str(e)
@@ -315,7 +319,9 @@ class InferenceClient:
                     function_result = f"Error: Invalid JSON arguments - {str(e)}"
                 else:
                     # Execute the tool
-                    function_result = await execute_tool_func(function_name, function_args)
+                    function_result = await execute_tool_func(
+                        function_name, function_args
+                    )
 
                 # Add tool result to messages
                 messages.append(
@@ -330,7 +336,9 @@ class InferenceClient:
             # Continue loop to let LLM process tool results
 
         # If we hit max iterations without a final answer
-        logger.warning("Reached maximum iterations (%d) without final answer", max_iterations)
+        logger.warning(
+            "Reached maximum iterations (%d) without final answer", max_iterations
+        )
         return "Analysis incomplete: Maximum tool calling iterations reached. Please try again with a simpler query."
 
 
@@ -437,7 +445,7 @@ async def analyze_with_agentic(
             messages=messages,
             tools=openai_tools,
             execute_tool_func=tool_executor,
-            max_iterations=max_iterations
+            max_iterations=max_iterations,
         )
 
     except InferenceAPIUnavailableError:

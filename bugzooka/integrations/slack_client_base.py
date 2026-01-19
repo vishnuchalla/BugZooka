@@ -5,7 +5,7 @@ message formatting, and common utilities.
 """
 import logging
 import sys
-from typing import List
+from typing import Any, Dict, List, Optional
 
 from slack_sdk.web import WebClient
 
@@ -18,7 +18,7 @@ class SlackClientBase:
     Provides common initialization, message formatting, and utility methods.
     """
 
-    def __init__(self, logger: logging.Logger, channel_id: str = None):
+    def __init__(self, logger: logging.Logger, channel_id: Optional[str] = None):
         """
         Initialize Slack client with common configuration.
 
@@ -39,7 +39,7 @@ class SlackClientBase:
 
     def get_slack_message_blocks(
         self, markdown_header: str, content_text: str, use_markdown: bool = False
-    ):
+    ) -> List[Dict[str, Any]]:
         """
         Prepares Slack message building blocks.
 
@@ -53,6 +53,7 @@ class SlackClientBase:
             "text": {"type": "mrkdwn", "text": markdown_header},
         }
 
+        content_block: Dict[str, Any]
         if use_markdown:
             content_block = {
                 "type": "markdown",
@@ -114,9 +115,9 @@ class SlackClientBase:
     def post_message(
         self,
         text: str,
-        thread_ts: str = None,
-        blocks=None,
-    ):
+        thread_ts: Optional[str] = None,
+        blocks: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         """
         Post a message to the configured Slack channel.
 
@@ -164,4 +165,3 @@ class SlackClientBase:
         self.logger.info("🛑 Shutting down Slack client...")
         self.running = False
         sys.exit(0)
-
