@@ -23,11 +23,12 @@ from bugzooka.analysis.log_summarizer import (
     build_summary_sections,
 )
 from bugzooka.analysis.prompts import RAG_AWARE_PROMPT
-from bugzooka.integrations.inference import (
+from bugzooka.integrations.inference_client import (
+    InferenceClient,
     InferenceAPIUnavailableError,
     AgentAnalysisLimitExceededError,
-    ask_inference_api,
 )
+from bugzooka.core.config import get_inference_config
 from bugzooka.integrations.rag_client_util import get_rag_context
 from bugzooka.integrations.slack_client_base import SlackClientBase
 from bugzooka.core.utils import (
@@ -296,7 +297,6 @@ class SlackMessageFetcher(SlackClientBase):
         latest_ts: str,
         product: str,
         ci_system: str,
-        product_config,
     ) -> Tuple[
         int,
         int,
@@ -419,7 +419,7 @@ class SlackMessageFetcher(SlackClientBase):
         return any(f.name.endswith(".json") for f in os.scandir(rag_dir))
 
     def _process_message(
-        self, msg, product, ci_system, product_config, enable_inference
+        self, msg, product, ci_system, inference_config, enable_inference
     ):
         """Process a single message through the complete pipeline."""
         user = msg.get("user", "Unknown")
@@ -442,7 +442,6 @@ class SlackMessageFetcher(SlackClientBase):
             self.post_time_summary(
                 product=product,
                 ci=ci_system,
-                product_config=product_config,
                 thread_ts=ts,
                 lookback_seconds=lookback,
                 verbose=verbose,
@@ -479,12 +478,12 @@ class SlackMessageFetcher(SlackClientBase):
         try:
             # Process with LLM
             error_summary = filter_errors_with_llm(
-                errors_list, requires_llm, product_config
+                errors_list, requires_llm, inference_config
             )
 
             # Run agent analysis
             analysis_response = run_agent_analysis(
-                error_summary, product, product_config
+                error_summary, product, inference_config
             )
 
             # Optionally augment with RAG-aware prompt when RAG_IMAGE is set
@@ -510,12 +509,15 @@ class SlackMessageFetcher(SlackClientBase):
                                 "content": RAG_AWARE_PROMPT["assistant"],
                             },
                         ]
-                        rag_resp = ask_inference_api(
-                            messages=rag_messages,
-                            url=product_config["endpoint"][product],
-                            api_token=product_config["token"][product],
-                            model=product_config["model"][product],
+                        rag_client = InferenceClient(
+                            base_url=inference_config["url"],
+                            api_key=inference_config["token"],
+                            model=inference_config["model"],
+                            verify_ssl=inference_config["verify_ssl"],
+                            timeout=inference_config["timeout"],
                         )
+                        rag_message = rag_client.chat(messages=rag_messages)
+                        rag_resp = rag_message.content or ""
                         combined_response = (
                             f"{analysis_response}\n\n"
                             f"💡 **RAG-Informed Insights:**\n{rag_resp}"
@@ -546,7 +548,7 @@ class SlackMessageFetcher(SlackClientBase):
         try:
             product = kwargs["product"]
             ci_system = kwargs["ci"]
-            product_config = kwargs["product_config"]
+            inference_config = kwargs["inference_config"]
             enable_inference = kwargs["enable_inference"]
 
             params = {"channel": self.channel_id, "limit": 1}
@@ -577,7 +579,7 @@ class SlackMessageFetcher(SlackClientBase):
                         max_ts = ts
 
                     processed_ts = self._process_message(
-                        msg, product, ci_system, product_config, enable_inference
+                        msg, product, ci_system, inference_config, enable_inference
                     )
 
                     if processed_ts and float(processed_ts) > float(
@@ -609,7 +611,6 @@ class SlackMessageFetcher(SlackClientBase):
         try:
             product = kwargs["product"]
             ci_system = kwargs["ci"]
-            product_config = kwargs["product_config"]
             thread_ts: Optional[str] = kwargs.get("thread_ts")
             lookback_seconds: int = kwargs.get(
                 "lookback_seconds", SUMMARY_LOOKBACK_SECONDS
@@ -632,7 +633,6 @@ class SlackMessageFetcher(SlackClientBase):
                 latest_ts=latest,
                 product=product,
                 ci_system=ci_system,
-                product_config=product_config,
             )
 
             # Build posting sections in summarizer to keep this class thin

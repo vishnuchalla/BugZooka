@@ -7,7 +7,7 @@ import threading
 
 from bugzooka.core.config import (
     SLACK_CHANNEL_ID,
-    get_product_config,
+    get_inference_config,
     configure_logging,
 )
 from bugzooka.core.constants import (
@@ -70,7 +70,7 @@ def main() -> None:
     kwargs = {
         "product": args.product.upper(),
         "ci": args.ci.upper(),
-        "product_config": get_product_config(product_name=args.product.upper()),
+        "inference_config": get_inference_config(),
         "enable_inference": args.enable_inference,
     }
 

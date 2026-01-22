@@ -25,17 +25,16 @@ from bugzooka.analysis.log_summarizer import (
     generate_prompt,
     download_url_to_log,
 )
-from bugzooka.integrations.inference import (
-    ask_inference_api,
-    analyze_product_log,
-    analyze_generic_log,
+from bugzooka.integrations.inference_client import (
+    InferenceClient,
+    analyze_log,
+    analyze_log_with_tools,
     AgentAnalysisLimitExceededError,
     InferenceAPIUnavailableError,
 )
 from bugzooka.integrations import mcp_client as mcp_module
 from bugzooka.integrations.mcp_client import initialize_global_resources_async
-from bugzooka.integrations.gemini_client import analyze_log_with_gemini
-from bugzooka.core.config import ANALYSIS_MODE
+from bugzooka.core.config import ANALYSIS_MODE, get_inference_config, get_prompt_config
 from bugzooka.analysis.prow_analyzer import analyze_prow_artifacts
 from bugzooka.core.utils import extract_job_details
 
@@ -46,15 +45,18 @@ class SingleStringInput(BaseModel):
     query: str = Field(description="The full error summary text to analyze.")
 
 
-def product_log_wrapper(query: str, product: str, product_config: dict) -> str:
-    """Wraps analyze_product_log to accept the 'query' keyword argument."""
-    # The 'query' keyword argument from the agent is passed as the error_summary
-    return analyze_product_log(product, product_config, query)
+def product_log_wrapper(query: str, product: str) -> str:
+    """Wraps analyze_log for product-specific analysis to accept 'query' keyword argument."""
+    inference_config = get_inference_config()
+    prompt_config = get_prompt_config(product)
+    return analyze_log(inference_config, prompt_config, query)
 
 
-def generic_log_wrapper(query: str, product_config: dict) -> str:
-    """Wraps analyze_generic_log to accept the 'query' keyword argument."""
-    return analyze_generic_log(product_config, query)
+def generic_log_wrapper(query: str) -> str:
+    """Wraps analyze_log for generic analysis to accept 'query' keyword argument."""
+    inference_config = get_inference_config()
+    prompt_config = get_prompt_config("GENERIC")
+    return analyze_log(inference_config, prompt_config, query)
 
 
 def download_and_analyze_logs(text, ci_system):
@@ -87,9 +89,9 @@ def download_and_analyze_logs(text, ci_system):
     return errors_list, categorization_message, requires_llm, is_install_issue
 
 
-def filter_errors_with_llm(errors_list, requires_llm, product_config):
+def filter_errors_with_llm(errors_list, requires_llm, inference_config):
     """Filter errors using LLM."""
-    retry_config = product_config.get("retry", {})
+    retry_config = inference_config.get("retry", {})
 
     @retry(
         stop=stop_after_attempt(retry_config["max_attempts"]),
@@ -106,40 +108,41 @@ def filter_errors_with_llm(errors_list, requires_llm, product_config):
     def _filter_errors():
         current_errors_list = errors_list
 
+        client = InferenceClient(
+            base_url=inference_config["url"],
+            api_key=inference_config["token"],
+            model=inference_config["model"],
+            verify_ssl=inference_config["verify_ssl"],
+            timeout=inference_config["timeout"],
+        )
+
         if requires_llm:
             error_step = current_errors_list[0]
             error_prompt = ERROR_FILTER_PROMPT["user"].format(
                 error_list="\n".join(current_errors_list or [])[:MAX_CONTEXT_SIZE]
             )
-            response = ask_inference_api(
+            message = client.chat(
                 messages=[
                     {"role": "system", "content": ERROR_FILTER_PROMPT["system"]},
                     {"role": "user", "content": error_prompt},
                     {"role": "assistant", "content": ERROR_FILTER_PROMPT["assistant"]},
                 ],
-                url=product_config["endpoint"]["GENERIC"],
-                api_token=product_config["token"]["GENERIC"],
-                model=product_config["model"]["GENERIC"],
             )
 
             # Convert JSON response to a Python list
-            current_errors_list = [error_step + "\n"] + response.split("\n")
+            content = message.content or ""
+            current_errors_list = [error_step + "\n"] + content.split("\n")
 
         error_prompt = generate_prompt(current_errors_list)
-        error_summary = ask_inference_api(
-            messages=error_prompt,
-            url=product_config["endpoint"]["GENERIC"],
-            api_token=product_config["token"]["GENERIC"],
-            model=product_config["model"]["GENERIC"],
-        )
-        return error_summary
+        message = client.chat(messages=error_prompt)
+        return message.content or ""
 
     return _filter_errors()
 
 
-def run_agent_analysis(error_summary, product, product_config):
+def run_agent_analysis(error_summary, product, inference_config):
     """Run agent analysis on the error summary."""
-    retry_config = product_config.get("retry", {})
+    retry_config = inference_config.get("retry", {})
 
     @retry(
         stop=stop_after_attempt(retry_config["max_attempts"]),
@@ -158,7 +161,7 @@ def run_agent_analysis(error_summary, product, product_config):
             logger.info("Using Gemini analysis mode")
             try:
                 # Execute async MCP initialization and Gemini analysis
-                return asyncio.run(_run_gemini_analysis_async(error_summary, product, product_config))
+                return asyncio.run(_run_gemini_analysis_async(error_summary, product))
             except Exception as e:
                 logger.error("Unexpected error during Gemini analysis: %s", str(e), exc_info=True)
                 raise InferenceAPIUnavailableError(
@@ -166,38 +169,31 @@ def run_agent_analysis(error_summary, product, product_config):
                 ) from e
         else:
             logger.info("Using agent-based analysis mode")
-            # This is where the core fix is applied.
-            # We must use asyncio.run to execute the async code.
             try:
-                # Execute the async function using asyncio.run
-                return asyncio.run(_run_fallback_agent_analysis_async(error_summary, product, product_config))
+                return asyncio.run(_run_fallback_agent_analysis_async(error_summary, product, inference_config))
             except Exception as e:
-                # This catches any unhandled exception (network, API, LangChain internal)
-                # and explicitly re-raises it with a message, preventing the silent failure.
-                # This ensures the tenacity decorator receives a proper exception.
                 logger.error("Unexpected error during async agent execution: %s", str(e), exc_info=True)
                 raise InferenceAPIUnavailableError(
                     f"Unhandled error during agent analysis: {type(e).__name__}: {str(e)}"
                 ) from e
 
-    async def _run_gemini_analysis_async(error_summary, product, product_config):
+    async def _run_gemini_analysis_async(error_summary, product):
         """Run Gemini analysis with MCP tool support."""
         # Initialize MCP client if not already initialized
         if mcp_module.mcp_client is None:
             await initialize_global_resources_async()
 
         # Create custom tools for product-specific and generic analysis
-        # (same tools as agent mode)
         product_tool = StructuredTool(
             name="analyze_product_log",
-            func=partial(product_log_wrapper, product=product, product_config=product_config),
+            func=partial(product_log_wrapper, product=product),
             description=f"Analyze {product} logs from error summary. Input should be the error summary.",
             args_schema=SingleStringInput
         )
 
         generic_tool = StructuredTool(
             name="analyze_generic_log",
-            func=partial(generic_log_wrapper, product_config=product_config),
+            func=generic_log_wrapper,
             description="Analyze general logs from error summary. Input should be the error summary.",
             args_schema=SingleStringInput
         )
@@ -215,40 +211,41 @@ def run_agent_analysis(error_summary, product, product_config):
         logger.info("Gemini mode: Using %d tools (%d MCP tools)",
                    len(tools), len(mcp_module.mcp_tools))
 
-        # Call Gemini with tools (await since it's now async)
-        response = await analyze_log_with_gemini(
-            product=product,
-            product_config=product_config,
+        # Get prompt config for this product
+        prompt_config = get_prompt_config(product)
+
+        # Call with tools (await since it's async)
+        response = await analyze_log_with_tools(
+            prompt_config=prompt_config,
             error_summary=error_summary,
             tools=tools if tools else None
         )
 
         return response
 
-    async def _run_fallback_agent_analysis_async(error_summary, product, product_config):
+    async def _run_fallback_agent_analysis_async(error_summary, product, inference_config):
         """Fallback to agent-based analysis if direct Gemini call fails."""
 
         if mcp_module.mcp_client is None:
             await initialize_global_resources_async()
 
         llm = ChatOpenAI(
-            model=product_config["model"]["GENERIC"],
-            api_key=product_config["token"]["GENERIC"],
-            base_url=product_config["endpoint"]["GENERIC"] + "/v1",
+            model=inference_config["model"],
+            api_key=inference_config["token"],
+            base_url=inference_config["url"] + "/v1",
         )
 
         # Use StructuredTool to enforce the single string input schema (query: str)
-        # The 'func' is partially applied with product/product_config.
         product_tool = StructuredTool(
             name="analyze_product_log",
-            func=partial(product_log_wrapper, product=product, product_config=product_config),
+            func=partial(product_log_wrapper, product=product),
             description=f"Analyze {product} logs from error summary. Input should be the error summary.",
             args_schema=SingleStringInput
         )
 
         generic_tool = StructuredTool(
             name="analyze_generic_log",
-            func=partial(generic_log_wrapper, product_config=product_config),
+            func=generic_log_wrapper,
             description="Analyze general logs from error summary. Input should be the error summary.",
             args_schema=SingleStringInput
         )

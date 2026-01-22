@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 from tests.helpers import CHANNEL_ID, create_test_messages, verify_slack_messages
 from bugzooka.integrations.slack_fetcher import SlackMessageFetcher
 from bugzooka.core.config import get_product_config
-from bugzooka.integrations.inference import InferenceAPIUnavailableError
+from bugzooka.integrations.inference_client import InferenceAPIUnavailableError
 
 
 def run_slack_fetcher_test(

@@ -1,7 +1,5 @@
 BUILD_LOG_TAIL = 256
 GENERIC = "GENERIC"
-GENERIC_MODEL = "llama-3-2-3b"
-GENERIC_INFERENCE_URL = "https://llama-3-2-3b-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443"
 INFERENCE_TOP_P = 0.95
 INFERENCE_FREQUENCY_PENALTY = 1.03
 INFERENCE_TEMPERATURE = 0.01

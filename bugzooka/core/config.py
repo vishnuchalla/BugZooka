@@ -5,8 +5,6 @@ from dotenv import load_dotenv
 
 from bugzooka.analysis.prompts import GENERIC_APP_PROMPT
 from bugzooka.core.constants import (
-    GENERIC_INFERENCE_URL,
-    GENERIC_MODEL,
     INFERENCE_API_RETRY_ATTEMPTS,
     INFERENCE_API_RETRY_DELAY,
     INFERENCE_API_RETRY_BACKOFF_MULTIPLIER,
@@ -32,49 +30,37 @@ SUMMARY_LOOKBACK_SECONDS = int(
 )
 
 
-def get_product_config(product_name: str):
+def get_inference_config():
     """
-    Dynamically fetch inference config based on the product name.
+    Get unified inference configuration from environment variables.
 
-    :param product_name: product name
-    :return: inference details based on product
+    Required env vars: INFERENCE_URL, INFERENCE_TOKEN, INFERENCE_MODEL
+    Optional env vars: INFERENCE_VERIFY_SSL (default: true), INFERENCE_TIMEOUT (default: 60.0)
+
+    :return: dict with url, token, model, verify_ssl, timeout, and retry settings
     """
-    with open("prompts.json", encoding="utf-8") as f:
-        PROMPT_DATA = json.load(f)
-    INFERENCE_ENDPOINTS = {
-        "GENERIC": os.getenv("GENERIC_INFERENCE_URL", GENERIC_INFERENCE_URL),
-    }
-    INFERENCE_MODEL_MAP = {
-        "GENERIC": os.getenv("GENERIC_MODEL", GENERIC_MODEL),
-    }
-    INFERENCE_TOKENS = {
-        "GENERIC": os.getenv("GENERIC_INFERENCE_TOKEN", ""),
-    }
-    INFERENCE_PROMPT_MAP = {
-        "GENERIC": PROMPT_DATA.get("GENERIC_PROMPT", GENERIC_APP_PROMPT),
-    }
-    INFERENCE_TOKENS[product_name] = os.getenv(f"{product_name}_INFERENCE_TOKEN") or ""
-    INFERENCE_MODEL_MAP[product_name] = os.getenv(f"{product_name}_MODEL") or ""
-    INFERENCE_ENDPOINTS[product_name] = os.getenv(f"{product_name}_INFERENCE_URL") or ""
-    INFERENCE_PROMPT_MAP[product_name] = PROMPT_DATA.get(
-        f"{product_name}_PROMPT", GENERIC_APP_PROMPT
-    )
+    url = os.getenv("INFERENCE_URL")
+    if not url:
+        raise ValueError("INFERENCE_URL environment variable is required")
 
-    if (
-        not INFERENCE_TOKENS[product_name]
-        or not INFERENCE_MODEL_MAP[product_name]
-        or not INFERENCE_ENDPOINTS[product_name]
-        or not INFERENCE_PROMPT_MAP[product_name]
-    ):
-        raise ValueError(
-            f"Missing env vars for product: {product_name}. Expected: {product_name}_INFERENCE_TOKEN, {product_name}_MODEL, {product_name}_INFERENCE_URL, {product_name}_PROMPT"
-        )
+    token = os.getenv("INFERENCE_TOKEN")
+    if not token:
+        raise ValueError("INFERENCE_TOKEN environment variable is required")
+
+    model = os.getenv("INFERENCE_MODEL")
+    if not model:
+        raise ValueError("INFERENCE_MODEL environment variable is required")
+
+    verify_ssl_env = os.getenv("INFERENCE_VERIFY_SSL", "true").lower()
+    verify_ssl = verify_ssl_env == "true"
+    timeout = float(os.getenv("INFERENCE_TIMEOUT", "60.0"))
 
     return {
-        "endpoint": INFERENCE_ENDPOINTS,
-        "token": INFERENCE_TOKENS,
-        "model": INFERENCE_MODEL_MAP,
-        "prompt": INFERENCE_PROMPT_MAP,
+        "url": url,
+        "token": token,
+        "model": model,
+        "verify_ssl": verify_ssl,
+        "timeout": timeout,
         "retry": {
             "max_attempts": int(
                 os.getenv(
@@ -97,6 +83,19 @@ def get_product_config(product_name: str):
             ),
         },
     }
+
+
+def get_prompt_config(product_name: str):
+    """
+    Get prompt configuration for a product.
+
+    :param product_name: product name (e.g., "OPENSHIFT", "GENERIC")
+    :return: dict with system, user, assistant prompts
+    """
+    with open("prompts.json", encoding="utf-8") as f:
+        prompt_data = json.load(f)
+
+    return prompt_data.get(f"{product_name}_PROMPT", GENERIC_APP_PROMPT)
 
 
 def configure_logging(log_level):
