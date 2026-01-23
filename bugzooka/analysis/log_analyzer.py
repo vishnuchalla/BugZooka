@@ -114,6 +114,8 @@ def filter_errors_with_llm(errors_list, requires_llm, inference_config):
             model=inference_config["model"],
             verify_ssl=inference_config["verify_ssl"],
             timeout=inference_config["timeout"],
+            top_p=inference_config.get("top_p"),
+            frequency_penalty=inference_config.get("frequency_penalty"),
         )
 
         if requires_llm:

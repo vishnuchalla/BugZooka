@@ -22,7 +22,7 @@ JEDI_BOT_SLACK_USER_ID = os.getenv("JEDI_BOT_SLACK_USER_ID", None)
 
 # Analysis mode configuration
 # Options: "gemini", or any other value defaults to agent-based analysis
-ANALYSIS_MODE = os.getenv("ANALYSIS_MODE", None)
+ANALYSIS_MODE = os.getenv("ANALYSIS_MODE", "gemini")
 
 # Weekly summary lookback window (seconds). Default: 7 days
 SUMMARY_LOOKBACK_SECONDS = int(
@@ -35,7 +35,11 @@ def get_inference_config():
     Get unified inference configuration from environment variables.
 
     Required env vars: INFERENCE_URL, INFERENCE_TOKEN, INFERENCE_MODEL
-    Optional env vars: INFERENCE_VERIFY_SSL (default: true), INFERENCE_TIMEOUT (default: 60.0)
+    Optional env vars:
+        - INFERENCE_VERIFY_SSL (default: true)
+        - INFERENCE_TIMEOUT (default: 120.0)
+        - INFERENCE_TOP_P (optional, not all APIs support this)
+        - INFERENCE_FREQUENCY_PENALTY (optional, not all APIs support this)
 
     :return: dict with url, token, model, verify_ssl, timeout, and retry settings
     """
@@ -53,7 +57,14 @@ def get_inference_config():
 
     verify_ssl_env = os.getenv("INFERENCE_VERIFY_SSL", "true").lower()
     verify_ssl = verify_ssl_env == "true"
-    timeout = float(os.getenv("INFERENCE_TIMEOUT", "60.0"))
+    timeout = float(os.getenv("INFERENCE_TIMEOUT", "120.0"))
+
+    # Optional parameters (not all APIs support these, e.g. Gemini doesn't support frequency_penalty)
+    top_p_env = os.getenv("INFERENCE_TOP_P")
+    top_p = float(top_p_env) if top_p_env else None
+
+    frequency_penalty_env = os.getenv("INFERENCE_FREQUENCY_PENALTY")
+    frequency_penalty = float(frequency_penalty_env) if frequency_penalty_env else None
 
     return {
         "url": url,
@@ -61,6 +72,8 @@ def get_inference_config():
         "model": model,
         "verify_ssl": verify_ssl,
         "timeout": timeout,
+        "top_p": top_p,
+        "frequency_penalty": frequency_penalty,
         "retry": {
             "max_attempts": int(
                 os.getenv(

@@ -515,6 +515,8 @@ class SlackMessageFetcher(SlackClientBase):
                             model=inference_config["model"],
                             verify_ssl=inference_config["verify_ssl"],
                             timeout=inference_config["timeout"],
+                            top_p=inference_config.get("top_p"),
+                            frequency_penalty=inference_config.get("frequency_penalty"),
                         )
                         rag_message = rag_client.chat(messages=rag_messages)
                         rag_resp = rag_message.content or ""

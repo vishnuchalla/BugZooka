@@ -18,8 +18,6 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from bugzooka.core.constants import (
     INFERENCE_MAX_TOKENS,
     INFERENCE_TEMPERATURE,
-    INFERENCE_TOP_P,
-    INFERENCE_FREQUENCY_PENALTY,
     INFERENCE_API_TIMEOUT_SECONDS,
     INFERENCE_MAX_TOOL_ITERATIONS,
 )
@@ -60,6 +58,8 @@ class InferenceClient:
         verify_ssl: bool = True,
         timeout: float = INFERENCE_API_TIMEOUT_SECONDS,
         supports_tools: bool = False,
+        top_p: float = None,
+        frequency_penalty: float = None,
     ):
         """
         Initialize the inference client.
@@ -68,14 +68,18 @@ class InferenceClient:
         :param api_key: API authentication token
         :param model: Model name to use for inference
         :param verify_ssl: Whether to verify SSL certificates (default: True)
-        :param timeout: Request timeout in seconds (default: 60)
+        :param timeout: Request timeout in seconds (default: 120)
         :param supports_tools: Whether this endpoint supports tool/function calling
+        :param top_p: Nucleus sampling probability (optional, not all APIs support this)
+        :param frequency_penalty: Penalty for frequent tokens (optional, not all APIs support this)
         """
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
         self.supports_tools = supports_tools
         self.timeout = timeout
+        self.top_p = top_p
+        self.frequency_penalty = frequency_penalty
 
         # Create custom HTTP client with SSL configuration
         if not verify_ssl:
@@ -108,8 +112,6 @@ class InferenceClient:
         messages: list,
         max_tokens: int = INFERENCE_MAX_TOKENS,
         temperature: float = INFERENCE_TEMPERATURE,
-        top_p: float = INFERENCE_TOP_P,
-        frequency_penalty: float = INFERENCE_FREQUENCY_PENALTY,
         tools: list = None,
         **kwargs,
     ):
@@ -119,8 +121,6 @@ class InferenceClient:
         :param messages: List of message dictionaries with 'role' and 'content'
         :param max_tokens: Maximum tokens to generate
         :param temperature: Controls randomness (0.0 = deterministic)
-        :param top_p: Nucleus sampling probability
-        :param frequency_penalty: Penalty for frequent tokens
         :param tools: Optional list of tools in OpenAI format (only if supports_tools=True)
         :param kwargs: Additional parameters passed to the API
         :return: Message object with .content and .tool_calls attributes
@@ -133,12 +133,11 @@ class InferenceClient:
                 "temperature": temperature,
             }
 
-            # Only add these if the endpoint likely supports them
-            # (some endpoints like Gemini may ignore them)
-            if top_p is not None:
-                api_kwargs["top_p"] = top_p
-            if frequency_penalty is not None:
-                api_kwargs["frequency_penalty"] = frequency_penalty
+            # Only add these if set on client (not all APIs support them, e.g. Gemini)
+            if self.top_p is not None:
+                api_kwargs["top_p"] = self.top_p
+            if self.frequency_penalty is not None:
+                api_kwargs["frequency_penalty"] = self.frequency_penalty
 
             # Add tools only if supported and provided
             if tools and self.supports_tools:
@@ -335,6 +334,8 @@ def analyze_log(
             model=inference_config["model"],
             verify_ssl=inference_config.get("verify_ssl", True),
             timeout=inference_config.get("timeout", INFERENCE_API_TIMEOUT_SECONDS),
+            top_p=inference_config.get("top_p"),
+            frequency_penalty=inference_config.get("frequency_penalty"),
         )
         message = client.chat(messages=messages, max_tokens=INFERENCE_MAX_TOKENS)
         return message.content or ""
@@ -449,7 +450,13 @@ async def analyze_with_agentic(
 
         verify_ssl_env = os.getenv("INFERENCE_VERIFY_SSL", "true").lower()
         verify_ssl = verify_ssl_env == "true"
-        timeout = float(os.getenv("INFERENCE_TIMEOUT", "60.0"))
+        timeout = float(os.getenv("INFERENCE_TIMEOUT", "120.0"))
+
+        # Optional parameters
+        top_p_env = os.getenv("INFERENCE_TOP_P")
+        top_p = float(top_p_env) if top_p_env else None
+        frequency_penalty_env = os.getenv("INFERENCE_FREQUENCY_PENALTY")
+        frequency_penalty = float(frequency_penalty_env) if frequency_penalty_env else None
 
         client = InferenceClient(
             base_url=base_url,
@@ -458,6 +465,8 @@ async def analyze_with_agentic(
             verify_ssl=verify_ssl,
             timeout=timeout,
             supports_tools=True,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
         )
 
         openai_tools = None
