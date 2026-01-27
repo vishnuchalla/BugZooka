@@ -65,11 +65,11 @@ def get_inference_client() -> "InferenceClient":
         base_url=config["url"],
         api_key=config["token"],
         model=config["model"],
+        retry_config=config["retry"],
         verify_ssl=config["verify_ssl"],
         timeout=config["timeout"],
-        supports_tools=True,
-        top_p=config.get("top_p"),
-        frequency_penalty=config.get("frequency_penalty"),
+        top_p=config["top_p"],
+        frequency_penalty=config["frequency_penalty"],
     )
 
     return _inference_client
@@ -96,9 +96,9 @@ class InferenceClient:
         base_url: str,
         api_key: str,
         model: str,
+        retry_config: dict,
         verify_ssl: bool = True,
         timeout: float = INFERENCE_API_TIMEOUT_SECONDS,
-        supports_tools: bool = False,
         top_p: float = None,
         frequency_penalty: float = None,
     ):
@@ -110,17 +110,17 @@ class InferenceClient:
         :param model: Model name to use for inference
         :param verify_ssl: Whether to verify SSL certificates (default: True)
         :param timeout: Request timeout in seconds (default: 120)
-        :param supports_tools: Whether this endpoint supports tool/function calling
         :param top_p: Nucleus sampling probability (optional, not all APIs support this)
         :param frequency_penalty: Penalty for frequent tokens (optional, not all APIs support this)
+        :param retry_config: Retry configuration dict with max_attempts, delay, backoff, max_delay
         """
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
-        self.supports_tools = supports_tools
         self.timeout = timeout
         self.top_p = top_p
         self.frequency_penalty = frequency_penalty
+        self.retry_config = retry_config
 
         # Create custom HTTP client with SSL configuration
         if not verify_ssl:
@@ -142,10 +142,9 @@ class InferenceClient:
         )
 
         logger.debug(
-            "Initialized InferenceClient: url=%s, model=%s, tools=%s",
+            "Initialized InferenceClient: url=%s, model=%s",
             normalized_url,
             model,
-            supports_tools,
         )
 
     def chat(
@@ -162,7 +161,7 @@ class InferenceClient:
         :param messages: List of message dictionaries with 'role' and 'content'
         :param max_tokens: Maximum tokens to generate
         :param temperature: Controls randomness (0.0 = deterministic)
-        :param tools: Optional list of tools in OpenAI format (only if supports_tools=True)
+        :param tools: Optional list of tools in OpenAI format
         :param kwargs: Additional parameters passed to the API
         :return: Message object with .content and .tool_calls attributes
         """
@@ -180,8 +179,8 @@ class InferenceClient:
             if self.frequency_penalty is not None:
                 api_kwargs["frequency_penalty"] = self.frequency_penalty
 
-            # Add tools only if supported and provided
-            if tools and self.supports_tools:
+            # Add tools only if provided
+            if tools:
                 api_kwargs["tools"] = tools
 
             # Add any extra kwargs
@@ -249,12 +248,6 @@ class InferenceClient:
         :param temperature: Controls randomness
         :return: Final response content as string
         """
-        if not self.supports_tools:
-            logger.warning(
-                "Tool calling requested but endpoint %s may not support it",
-                self.base_url,
-            )
-
         logger.debug("Starting agentic loop with %d messages", len(messages))
 
         iteration = 0
@@ -346,7 +339,7 @@ class InferenceClient:
 # =============================================================================
 
 
-async def execute_tool_call(tool_name, tool_args, available_tools):
+async def _execute_tool_call(tool_name, tool_args, available_tools):
     """
     Execute a tool call by finding and invoking the appropriate LangChain tool.
     Handles both sync and async tools.
@@ -367,13 +360,7 @@ async def execute_tool_call(tool_name, tool_args, available_tools):
         logger.info("Executing tool: %s", tool_name)
         logger.debug("Tool arguments: %s", json.dumps(tool_args, indent=2))
 
-        # Check if the tool is async
-        if hasattr(tool, "coroutine") and tool.coroutine:
-            result = await tool.ainvoke(tool_args)
-        elif hasattr(tool, "ainvoke"):
-            result = await tool.ainvoke(tool_args)
-        else:
-            result = tool.invoke(tool_args)
+        result = await tool.ainvoke(tool_args)
 
         result_str = str(result)
         result_length = len(result_str)
@@ -440,23 +427,17 @@ async def analyze_with_agentic(
 
         if not openai_tools:
             logger.debug("No tools provided, doing simple chat completion")
-            message = client.chat(
-                messages=messages,
-                max_tokens=INFERENCE_MAX_TOKENS,
-                temperature=INFERENCE_TEMPERATURE,
-            )
+            message = client.chat(messages=messages)
             return message.content or ""
 
         async def tool_executor(tool_name, tool_args):
-            return await execute_tool_call(tool_name, tool_args, tools)
+            return await _execute_tool_call(tool_name, tool_args, tools)
 
         return await client.chat_with_tools_async(
             messages=messages,
             tools=openai_tools,
             execute_tool_func=tool_executor,
-            max_iterations=max_iterations,
-            max_tokens=INFERENCE_MAX_TOKENS,
-            temperature=INFERENCE_TEMPERATURE,
+            max_iterations=max_iterations
         )
 
     except InferenceAPIUnavailableError:

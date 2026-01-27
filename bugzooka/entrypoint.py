@@ -23,9 +23,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="BugZooka - Slack Log Analyzer Bot")
 
     parser.add_argument(
-        "--ci", type=str, default=os.environ.get("CI"), help="CI system name"
-    )
-    parser.add_argument(
         "--log-level",
         type=str,
         choices=VALID_LOG_LEVELS,
@@ -51,15 +48,7 @@ def main() -> None:
     configure_logging(args.log_level)
     logger = logging.getLogger(__name__)
 
-    missing_args = []
-    if not args.ci:
-        missing_args.append("ci or CI")
-    if missing_args:
-        logger.error("Missing required arguments or env vars: {%s}", missing_args)
-        sys.exit(1)
-
     kwargs = {
-        "ci": args.ci.upper(),
         "enable_inference": args.enable_inference,
     }
 
@@ -78,7 +67,6 @@ def main() -> None:
         # Start socket listener in a separate thread
         socket_thread = threading.Thread(
             target=listener.run,
-            kwargs=kwargs,
             daemon=True,
             name="SocketModeListener",
         )

@@ -43,8 +43,6 @@ spec:
           imagePullPolicy: IfNotPresent
           args: []
           env:
-            - name: CI
-              value: "prow"
             - name: ENABLE_SOCKET_MODE
               value: "false"
           envFrom:

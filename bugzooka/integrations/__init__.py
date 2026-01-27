@@ -8,7 +8,6 @@ from bugzooka.integrations.inference_client import (
     InferenceAPIUnavailableError,
     AgentAnalysisLimitExceededError,
     # Agentic functions
-    execute_tool_call,
     analyze_with_agentic,
 )
 
@@ -20,6 +19,5 @@ __all__ = [
     "InferenceAPIUnavailableError",
     "AgentAnalysisLimitExceededError",
     # Agentic functions
-    "execute_tool_call",
     "analyze_with_agentic",
 ]

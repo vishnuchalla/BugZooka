@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 from bugzooka.analysis.prompts import GENERIC_APP_PROMPT
 from bugzooka.core.constants import (
+    INFERENCE_API_TIMEOUT_SECONDS,
     INFERENCE_API_RETRY_ATTEMPTS,
     INFERENCE_API_RETRY_DELAY,
     INFERENCE_API_RETRY_BACKOFF_MULTIPLIER,
@@ -33,7 +34,7 @@ def get_inference_config():
     Required env vars: INFERENCE_URL, INFERENCE_TOKEN, INFERENCE_MODEL
     Optional env vars:
         - INFERENCE_VERIFY_SSL (default: true)
-        - INFERENCE_TIMEOUT (default: 120.0)
+        - INFERENCE_API_TIMEOUT_SECONDS (default: 120)
         - INFERENCE_TOP_P (optional, not all APIs support this)
         - INFERENCE_FREQUENCY_PENALTY (optional, not all APIs support this)
 
@@ -53,7 +54,7 @@ def get_inference_config():
 
     verify_ssl_env = os.getenv("INFERENCE_VERIFY_SSL", "true").lower()
     verify_ssl = verify_ssl_env == "true"
-    timeout = float(os.getenv("INFERENCE_TIMEOUT", "120.0"))
+    timeout = float(os.getenv("INFERENCE_API_TIMEOUT_SECONDS", str(INFERENCE_API_TIMEOUT_SECONDS)))
 
     # Optional parameters (not all APIs support these, e.g. Gemini doesn't support frequency_penalty)
     top_p_env = os.getenv("INFERENCE_TOP_P")
@@ -73,21 +74,21 @@ def get_inference_config():
         "retry": {
             "max_attempts": int(
                 os.getenv(
-                    "INFERENCE_API_RETRY_MAX_ATTEMPTS", INFERENCE_API_RETRY_ATTEMPTS
+                    "INFERENCE_API_RETRY_MAX_ATTEMPTS", str(INFERENCE_API_RETRY_ATTEMPTS)
                 )
             ),
             "delay": float(
-                os.getenv("INFERENCE_API_RETRY_DELAY", INFERENCE_API_RETRY_DELAY)
+                os.getenv("INFERENCE_API_RETRY_DELAY", str(INFERENCE_API_RETRY_DELAY))
             ),
             "backoff": float(
                 os.getenv(
                     "INFERENCE_API_RETRY_BACKOFF_MULTIPLIER",
-                    INFERENCE_API_RETRY_BACKOFF_MULTIPLIER,
+                    str(INFERENCE_API_RETRY_BACKOFF_MULTIPLIER),
                 )
             ),
             "max_delay": float(
                 os.getenv(
-                    "INFERENCE_API_RETRY_MAX_DELAY", INFERENCE_API_MAX_RETRY_DELAY
+                    "INFERENCE_API_RETRY_MAX_DELAY", str(INFERENCE_API_MAX_RETRY_DELAY)
                 )
             ),
         },

@@ -24,8 +24,6 @@ spec:
             - secretRef:
                 name: bugzooka-env
           env:
-            - name: CI
-              value: "prow"
             - name: ENABLE_INFERENCE
               value: "true"
             - name: ENABLE_SOCKET_MODE
