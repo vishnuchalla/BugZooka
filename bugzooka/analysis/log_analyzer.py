@@ -26,7 +26,7 @@ from bugzooka.analysis.log_summarizer import (
     download_url_to_log,
 )
 from bugzooka.integrations.inference_client import (
-    InferenceClient,
+    get_inference_client,
     analyze_log,
     analyze_log_with_tools,
     AgentAnalysisLimitExceededError,
@@ -47,16 +47,14 @@ class SingleStringInput(BaseModel):
 
 def product_log_wrapper(query: str, product: str) -> str:
     """Wraps analyze_log for product-specific analysis to accept 'query' keyword argument."""
-    inference_config = get_inference_config()
     prompt_config = get_prompt_config(product)
-    return analyze_log(inference_config, prompt_config, query)
+    return analyze_log(prompt_config, query)
 
 
 def generic_log_wrapper(query: str) -> str:
     """Wraps analyze_log for generic analysis to accept 'query' keyword argument."""
-    inference_config = get_inference_config()
     prompt_config = get_prompt_config("GENERIC")
-    return analyze_log(inference_config, prompt_config, query)
+    return analyze_log(prompt_config, query)
 
 
 def download_and_analyze_logs(text, ci_system):
@@ -89,8 +87,9 @@ def download_and_analyze_logs(text, ci_system):
     return errors_list, categorization_message, requires_llm, is_install_issue
 
 
-def filter_errors_with_llm(errors_list, requires_llm, inference_config):
-    """Filter errors using LLM."""
+def filter_errors_with_llm(errors_list, requires_llm):
+    """Filter errors using LLM. Uses the global inference client."""
+    inference_config = get_inference_config()
     retry_config = inference_config.get("retry", {})
 
     @retry(
@@ -107,16 +106,7 @@ def filter_errors_with_llm(errors_list, requires_llm, inference_config):
     )
     def _filter_errors():
         current_errors_list = errors_list
-
-        client = InferenceClient(
-            base_url=inference_config["url"],
-            api_key=inference_config["token"],
-            model=inference_config["model"],
-            verify_ssl=inference_config["verify_ssl"],
-            timeout=inference_config["timeout"],
-            top_p=inference_config.get("top_p"),
-            frequency_penalty=inference_config.get("frequency_penalty"),
-        )
+        client = get_inference_client()
 
         if requires_llm:
             error_step = current_errors_list[0]
@@ -142,8 +132,9 @@ def filter_errors_with_llm(errors_list, requires_llm, inference_config):
     return _filter_errors()
 
 
-def run_agent_analysis(error_summary, product, inference_config):
-    """Run agent analysis on the error summary."""
+def run_agent_analysis(error_summary, product):
+    """Run agent analysis on the error summary. Uses the global inference client."""
+    inference_config = get_inference_config()
     retry_config = inference_config.get("retry", {})
 
     @retry(
@@ -172,7 +163,7 @@ def run_agent_analysis(error_summary, product, inference_config):
         else:
             logger.info("Using agent-based analysis mode")
             try:
-                return asyncio.run(_run_fallback_agent_analysis_async(error_summary, product, inference_config))
+                return asyncio.run(_run_fallback_agent_analysis_async(error_summary, product))
             except Exception as e:
                 logger.error("Unexpected error during async agent execution: %s", str(e), exc_info=True)
                 raise InferenceAPIUnavailableError(
@@ -225,16 +216,17 @@ def run_agent_analysis(error_summary, product, inference_config):
 
         return response
 
-    async def _run_fallback_agent_analysis_async(error_summary, product, inference_config):
+    async def _run_fallback_agent_analysis_async(error_summary, product):
         """Fallback to agent-based analysis if direct Gemini call fails."""
 
         if mcp_module.mcp_client is None:
             await initialize_global_resources_async()
 
+        config = get_inference_config()
         llm = ChatOpenAI(
-            model=inference_config["model"],
-            api_key=inference_config["token"],
-            base_url=inference_config["url"] + "/v1",
+            model=config["model"],
+            api_key=config["token"],
+            base_url=config["url"] + "/v1",
         )
 
         # Use StructuredTool to enforce the single string input schema (query: str)

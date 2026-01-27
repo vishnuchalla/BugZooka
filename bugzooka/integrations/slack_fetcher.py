@@ -24,11 +24,10 @@ from bugzooka.analysis.log_summarizer import (
 )
 from bugzooka.analysis.prompts import RAG_AWARE_PROMPT
 from bugzooka.integrations.inference_client import (
-    InferenceClient,
+    get_inference_client,
     InferenceAPIUnavailableError,
     AgentAnalysisLimitExceededError,
 )
-from bugzooka.core.config import get_inference_config
 from bugzooka.integrations.rag_client_util import get_rag_context
 from bugzooka.integrations.slack_client_base import SlackClientBase
 from bugzooka.core.utils import (
@@ -419,7 +418,7 @@ class SlackMessageFetcher(SlackClientBase):
         return any(f.name.endswith(".json") for f in os.scandir(rag_dir))
 
     def _process_message(
-        self, msg, product, ci_system, inference_config, enable_inference
+        self, msg, product, ci_system, enable_inference
     ):
         """Process a single message through the complete pipeline."""
         user = msg.get("user", "Unknown")
@@ -477,14 +476,10 @@ class SlackMessageFetcher(SlackClientBase):
 
         try:
             # Process with LLM
-            error_summary = filter_errors_with_llm(
-                errors_list, requires_llm, inference_config
-            )
+            error_summary = filter_errors_with_llm(errors_list, requires_llm)
 
             # Run agent analysis
-            analysis_response = run_agent_analysis(
-                error_summary, product, inference_config
-            )
+            analysis_response = run_agent_analysis(error_summary, product)
 
             # Optionally augment with RAG-aware prompt when RAG_IMAGE is set
             combined_response = analysis_response
@@ -509,15 +504,7 @@ class SlackMessageFetcher(SlackClientBase):
                                 "content": RAG_AWARE_PROMPT["assistant"],
                             },
                         ]
-                        rag_client = InferenceClient(
-                            base_url=inference_config["url"],
-                            api_key=inference_config["token"],
-                            model=inference_config["model"],
-                            verify_ssl=inference_config["verify_ssl"],
-                            timeout=inference_config["timeout"],
-                            top_p=inference_config.get("top_p"),
-                            frequency_penalty=inference_config.get("frequency_penalty"),
-                        )
+                        rag_client = get_inference_client()
                         rag_message = rag_client.chat(messages=rag_messages)
                         rag_resp = rag_message.content or ""
                         combined_response = (
@@ -550,7 +537,6 @@ class SlackMessageFetcher(SlackClientBase):
         try:
             product = kwargs["product"]
             ci_system = kwargs["ci"]
-            inference_config = kwargs["inference_config"]
             enable_inference = kwargs["enable_inference"]
 
             params = {"channel": self.channel_id, "limit": 1}
@@ -581,7 +567,7 @@ class SlackMessageFetcher(SlackClientBase):
                         max_ts = ts
 
                     processed_ts = self._process_message(
-                        msg, product, ci_system, inference_config, enable_inference
+                        msg, product, ci_system, enable_inference
                     )
 
                     if processed_ts and float(processed_ts) > float(

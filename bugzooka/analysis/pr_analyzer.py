@@ -158,7 +158,6 @@ async def analyze_pr_with_gemini(text: str) -> dict:
         result = await analyze_with_agentic(
             messages=messages,
             tools=mcp_module.mcp_tools,
-            model="gemini-2.5-pro",
         )
         
         # Handle empty results

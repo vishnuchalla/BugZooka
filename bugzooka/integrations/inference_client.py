@@ -7,7 +7,6 @@ inference endpoint including Gemini, Llama, DeepSeek, etc.
 
 import json
 import logging
-import os
 import ssl
 from typing import Optional
 
@@ -32,6 +31,49 @@ class InferenceAPIUnavailableError(Exception):
 
 class AgentAnalysisLimitExceededError(Exception):
     """Raised when the agent analysis exceeds iteration or time limits."""
+
+
+# Global inference client instance (initialized lazily)
+_inference_client: Optional["InferenceClient"] = None
+
+
+def get_inference_client() -> "InferenceClient":
+    """
+    Get the global inference client instance.
+
+    Initializes the client on first call using INFERENCE_* environment variables
+    via get_inference_config(). Subsequent calls return the same instance.
+
+    :return: Global InferenceClient instance
+    :raises ValueError: If required environment variables are not set
+    """
+    global _inference_client
+
+    if _inference_client is not None:
+        return _inference_client
+
+    from bugzooka.core.config import get_inference_config
+
+    config = get_inference_config()
+
+    logger.info(
+        "Initializing global inference client: url=%s, model=%s",
+        config["url"],
+        config["model"],
+    )
+
+    _inference_client = InferenceClient(
+        base_url=config["url"],
+        api_key=config["token"],
+        model=config["model"],
+        verify_ssl=config["verify_ssl"],
+        timeout=config["timeout"],
+        supports_tools=True,
+        top_p=config.get("top_p"),
+        frequency_penalty=config.get("frequency_penalty"),
+    )
+
+    return _inference_client
 
 
 class InferenceClient:
@@ -305,13 +347,12 @@ class InferenceClient:
 # =============================================================================
 
 
-def analyze_log(
-    inference_config: dict, prompt_config: dict, error_summary: str
-) -> str:
+def analyze_log(prompt_config: dict, error_summary: str) -> str:
     """
     Analyzes log summaries using config-driven prompting.
 
-    :param inference_config: Config dict with url, token, model, verify_ssl, timeout
+    Uses the global inference client (initialized from INFERENCE_* env vars).
+
     :param prompt_config: Prompt dict with system, user, assistant keys
     :param error_summary: Error summary text to analyze
     :return: Analysis result
@@ -328,15 +369,7 @@ def analyze_log(
             {"role": "assistant", "content": prompt_config["assistant"]},
         ]
 
-        client = InferenceClient(
-            base_url=inference_config["url"],
-            api_key=inference_config["token"],
-            model=inference_config["model"],
-            verify_ssl=inference_config.get("verify_ssl", True),
-            timeout=inference_config.get("timeout", INFERENCE_API_TIMEOUT_SECONDS),
-            top_p=inference_config.get("top_p"),
-            frequency_penalty=inference_config.get("frequency_penalty"),
-        )
+        client = get_inference_client()
         message = client.chat(messages=messages, max_tokens=INFERENCE_MAX_TOKENS)
         return message.content or ""
 
@@ -410,7 +443,6 @@ async def execute_tool_call(tool_name, tool_args, available_tools):
 async def analyze_with_agentic(
     messages: list,
     tools=None,
-    model: str = None,
     max_iterations=None,
 ):
     """
@@ -422,11 +454,10 @@ async def analyze_with_agentic(
     3. Process tool results
     4. Generate final answer
 
-    Requires INFERENCE_URL and INFERENCE_TOKEN environment variables.
+    Uses the global inference client (initialized from INFERENCE_* env vars).
 
     :param messages: List of message dictionaries (system, user, assistant prompts)
     :param tools: List of LangChain tools available for the LLM to call (optional)
-    :param model: Model to use (defaults to INFERENCE_MODEL env var)
     :param max_iterations: Maximum number of tool calling iterations
     :return: Final analysis result as string
     """
@@ -434,40 +465,7 @@ async def analyze_with_agentic(
         max_iterations = INFERENCE_MAX_TOOL_ITERATIONS
 
     try:
-        # Create client from environment variables
-        base_url = os.getenv("INFERENCE_URL")
-        if not base_url:
-            raise ValueError("INFERENCE_URL environment variable is required")
-
-        api_key = os.getenv("INFERENCE_TOKEN")
-        if not api_key:
-            raise ValueError("INFERENCE_TOKEN environment variable is required")
-
-        if model is None:
-            model = os.getenv("INFERENCE_MODEL")
-            if not model:
-                raise ValueError("INFERENCE_MODEL environment variable is required")
-
-        verify_ssl_env = os.getenv("INFERENCE_VERIFY_SSL", "true").lower()
-        verify_ssl = verify_ssl_env == "true"
-        timeout = float(os.getenv("INFERENCE_TIMEOUT", "120.0"))
-
-        # Optional parameters
-        top_p_env = os.getenv("INFERENCE_TOP_P")
-        top_p = float(top_p_env) if top_p_env else None
-        frequency_penalty_env = os.getenv("INFERENCE_FREQUENCY_PENALTY")
-        frequency_penalty = float(frequency_penalty_env) if frequency_penalty_env else None
-
-        client = InferenceClient(
-            base_url=base_url,
-            api_key=api_key,
-            model=model,
-            verify_ssl=verify_ssl,
-            timeout=timeout,
-            supports_tools=True,
-            top_p=top_p,
-            frequency_penalty=frequency_penalty,
-        )
+        client = get_inference_client()
 
         openai_tools = None
         if tools:
