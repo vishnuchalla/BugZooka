@@ -20,7 +20,6 @@ from bugzooka.core.constants import (
     INFERENCE_API_TIMEOUT_SECONDS,
     INFERENCE_MAX_TOOL_ITERATIONS,
 )
-from bugzooka.analysis.prompts import JIRA_TOOL_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -343,44 +342,6 @@ class InferenceClient:
 
 
 # =============================================================================
-# Convenience Functions
-# =============================================================================
-
-
-def analyze_log(prompt_config: dict, error_summary: str) -> str:
-    """
-    Analyzes log summaries using config-driven prompting.
-
-    Uses the global inference client (initialized from INFERENCE_* env vars).
-
-    :param prompt_config: Prompt dict with system, user, assistant keys
-    :param error_summary: Error summary text to analyze
-    :return: Analysis result
-    """
-    try:
-        try:
-            formatted_content = prompt_config["user"].format(error_summary=error_summary)
-        except KeyError:
-            formatted_content = prompt_config["user"].format(summary=error_summary)
-
-        messages = [
-            {"role": "system", "content": prompt_config["system"]},
-            {"role": "user", "content": formatted_content},
-            {"role": "assistant", "content": prompt_config["assistant"]},
-        ]
-
-        client = get_inference_client()
-        message = client.chat(messages=messages, max_tokens=INFERENCE_MAX_TOKENS)
-        return message.content or ""
-
-    except InferenceAPIUnavailableError:
-        raise
-    except Exception as e:
-        logger.error("Error analyzing log: %s", e)
-        raise InferenceAPIUnavailableError(f"Error analyzing log: {e}") from e
-
-
-# =============================================================================
 # Tool/Agentic Functions
 # =============================================================================
 
@@ -503,57 +464,3 @@ async def analyze_with_agentic(
     except Exception as e:
         logger.error("Error in agentic loop: %s", str(e), exc_info=True)
         raise InferenceAPIUnavailableError(f"Error in agentic loop: {str(e)}") from e
-
-
-async def analyze_log_with_tools(
-    prompt_config: dict,
-    error_summary: str,
-    tools=None,
-    max_iterations=None,
-):
-    """
-    Analyzes log summaries using an LLM with prompts and optional tool calling.
-
-    Uses INFERENCE_* environment variables for LLM configuration.
-
-    :param prompt_config: Prompt dict with system, user, assistant keys
-    :param error_summary: Error summary text to analyze
-    :param tools: List of LangChain tools available for the LLM to call (optional)
-    :param max_iterations: Maximum number of tool calling iterations
-    :return: Analysis result
-    """
-    try:
-        logger.info("Starting log analysis with tools")
-
-        try:
-            formatted_content = prompt_config["user"].format(error_summary=error_summary)
-        except KeyError:
-            formatted_content = prompt_config["user"].format(summary=error_summary)
-
-        logger.debug(
-            "Error summary: %s",
-            error_summary[:150] + "..." if len(error_summary) > 150 else error_summary,
-        )
-
-        system_prompt = prompt_config["system"]
-        if tools and any(getattr(t, "name", "") == "search_jira_issues" for t in tools):
-            logger.info("Jira MCP tools detected - injecting Jira prompt")
-            system_prompt += JIRA_TOOL_PROMPT["system"]
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": formatted_content},
-            {"role": "assistant", "content": prompt_config["assistant"]},
-        ]
-
-        return await analyze_with_agentic(
-            messages=messages,
-            tools=tools,
-            max_iterations=max_iterations,
-        )
-
-    except InferenceAPIUnavailableError:
-        raise
-    except Exception as e:
-        logger.error("Error analyzing log: %s", str(e), exc_info=True)
-        raise InferenceAPIUnavailableError(f"Error analyzing log: {str(e)}") from e

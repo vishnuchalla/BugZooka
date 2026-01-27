@@ -294,7 +294,6 @@ class SlackMessageFetcher(SlackClientBase):
         self,
         oldest_ts: str,
         latest_ts: str,
-        product: str,
         ci_system: str,
     ) -> Tuple[
         int,
@@ -418,7 +417,7 @@ class SlackMessageFetcher(SlackClientBase):
         return any(f.name.endswith(".json") for f in os.scandir(rag_dir))
 
     def _process_message(
-        self, msg, product, ci_system, enable_inference
+        self, msg, ci_system, enable_inference
     ):
         """Process a single message through the complete pipeline."""
         user = msg.get("user", "Unknown")
@@ -439,7 +438,6 @@ class SlackMessageFetcher(SlackClientBase):
             verbose = "verbose" in text_lower
             self.logger.info("Triggering time summary on demand for %s%s", value, unit)
             self.post_time_summary(
-                product=product,
                 ci=ci_system,
                 thread_ts=ts,
                 lookback_seconds=lookback,
@@ -479,7 +477,7 @@ class SlackMessageFetcher(SlackClientBase):
             error_summary = filter_errors_with_llm(errors_list, requires_llm)
 
             # Run agent analysis
-            analysis_response = run_agent_analysis(error_summary, product)
+            analysis_response = run_agent_analysis(error_summary)
 
             # Optionally augment with RAG-aware prompt when RAG_IMAGE is set
             combined_response = analysis_response
@@ -535,7 +533,6 @@ class SlackMessageFetcher(SlackClientBase):
     def fetch_messages(self, **kwargs):
         """Fetches only the latest messages from the Slack channel."""
         try:
-            product = kwargs["product"]
             ci_system = kwargs["ci"]
             enable_inference = kwargs["enable_inference"]
 
@@ -567,7 +564,7 @@ class SlackMessageFetcher(SlackClientBase):
                         max_ts = ts
 
                     processed_ts = self._process_message(
-                        msg, product, ci_system, enable_inference
+                        msg, ci_system, enable_inference
                     )
 
                     if processed_ts and float(processed_ts) > float(
@@ -597,7 +594,6 @@ class SlackMessageFetcher(SlackClientBase):
         Fetch messages from the last lookback_seconds, aggregate failures by type, and post a summary.
         """
         try:
-            product = kwargs["product"]
             ci_system = kwargs["ci"]
             thread_ts: Optional[str] = kwargs.get("thread_ts")
             lookback_seconds: int = kwargs.get(
@@ -619,7 +615,6 @@ class SlackMessageFetcher(SlackClientBase):
             ) = self._summarize_messages_in_range(
                 oldest_ts=oldest,
                 latest_ts=latest,
-                product=product,
                 ci_system=ci_system,
             )
 

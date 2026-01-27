@@ -24,8 +24,6 @@ spec:
             - secretRef:
                 name: bugzooka-env
           env:
-            - name: PRODUCT
-              value: "openshift"
             - name: CI
               value: "prow"
             - name: ENABLE_INFERENCE

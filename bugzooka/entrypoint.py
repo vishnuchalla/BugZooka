@@ -23,12 +23,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="BugZooka - Slack Log Analyzer Bot")
 
     parser.add_argument(
-        "--product",
-        type=str,
-        default=os.environ.get("PRODUCT"),
-        help="Product type (e.g., openshift, ansible)",
-    )
-    parser.add_argument(
         "--ci", type=str, default=os.environ.get("CI"), help="CI system name"
     )
     parser.add_argument(
@@ -58,8 +52,6 @@ def main() -> None:
     logger = logging.getLogger(__name__)
 
     missing_args = []
-    if not args.product:
-        missing_args.append("product or PRODUCT")
     if not args.ci:
         missing_args.append("ci or CI")
     if missing_args:
@@ -67,7 +59,6 @@ def main() -> None:
         sys.exit(1)
 
     kwargs = {
-        "product": args.product.upper(),
         "ci": args.ci.upper(),
         "enable_inference": args.enable_inference,
     }

@@ -8,7 +8,7 @@ resources:
   - secret-quay.yaml
   - serviceaccount-patch.yaml
   - imagestream.yaml
-  - configmap-prompts.yaml
+  - configmap-prompt.yaml
   - configmap-mcp-config.yaml
   - deployment.yaml
 

@@ -1,7 +1,6 @@
 import logging
 import re
 import asyncio
-from functools import partial
 from pydantic import BaseModel, Field
 
 from langchain_core.tools import StructuredTool
@@ -12,8 +11,8 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-from bugzooka.core.constants import MAX_CONTEXT_SIZE
-from bugzooka.analysis.prompts import ERROR_FILTER_PROMPT
+from bugzooka.core.constants import MAX_CONTEXT_SIZE, INFERENCE_MAX_TOKENS
+from bugzooka.analysis.prompts import ERROR_FILTER_PROMPT, JIRA_TOOL_PROMPT
 from bugzooka.analysis.log_summarizer import (
     download_prow_logs,
     search_errors_in_file,
@@ -22,8 +21,7 @@ from bugzooka.analysis.log_summarizer import (
 )
 from bugzooka.integrations.inference_client import (
     get_inference_client,
-    analyze_log,
-    analyze_log_with_tools,
+    analyze_with_agentic,
     AgentAnalysisLimitExceededError,
     InferenceAPIUnavailableError,
 )
@@ -40,16 +38,83 @@ class SingleStringInput(BaseModel):
     query: str = Field(description="The full error summary text to analyze.")
 
 
-def product_log_wrapper(query: str, product: str) -> str:
-    """Wraps analyze_log for product-specific analysis to accept 'query' keyword argument."""
-    prompt_config = get_prompt_config(product)
-    return analyze_log(prompt_config, query)
+async def analyze_log_with_tools(
+    prompt_config: dict,
+    error_summary: str,
+    tools=None,
+    max_iterations=None,
+):
+    """
+    Analyzes log summaries using an LLM with prompts and optional tool calling.
+
+    :param prompt_config: Prompt dict with system, user, assistant keys
+    :param error_summary: Error summary text to analyze
+    :param tools: List of LangChain tools available for the LLM to call (optional)
+    :param max_iterations: Maximum number of tool calling iterations
+    :return: Analysis result
+    """
+    try:
+        logger.info("Starting log analysis with tools")
+
+        try:
+            formatted_content = prompt_config["user"].format(error_summary=error_summary)
+        except KeyError:
+            formatted_content = prompt_config["user"].format(summary=error_summary)
+
+        logger.debug(
+            "Error summary: %s",
+            error_summary[:150] + "..." if len(error_summary) > 150 else error_summary,
+        )
+
+        system_prompt = prompt_config["system"]
+        if tools and any(getattr(t, "name", "") == "search_jira_issues" for t in tools):
+            logger.info("Jira MCP tools detected - injecting Jira prompt")
+            system_prompt += JIRA_TOOL_PROMPT["system"]
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": formatted_content},
+            {"role": "assistant", "content": prompt_config["assistant"]},
+        ]
+
+        return await analyze_with_agentic(
+            messages=messages,
+            tools=tools,
+            max_iterations=max_iterations,
+        )
+
+    except InferenceAPIUnavailableError:
+        raise
+    except Exception as e:
+        logger.error("Error analyzing log: %s", str(e), exc_info=True)
+        raise InferenceAPIUnavailableError(f"Error analyzing log: {str(e)}") from e
 
 
-def generic_log_wrapper(query: str) -> str:
-    """Wraps analyze_log for generic analysis to accept 'query' keyword argument."""
-    prompt_config = get_prompt_config("GENERIC")
-    return analyze_log(prompt_config, query)
+def analyze_log_tool(query: str) -> str:
+    """Tool function for LLM to analyze logs. Accepts 'query' to match SingleStringInput schema."""
+    try:
+        prompt_config = get_prompt_config()
+
+        try:
+            formatted_content = prompt_config["user"].format(error_summary=query)
+        except KeyError:
+            formatted_content = prompt_config["user"].format(summary=query)
+
+        messages = [
+            {"role": "system", "content": prompt_config["system"]},
+            {"role": "user", "content": formatted_content},
+            {"role": "assistant", "content": prompt_config["assistant"]},
+        ]
+
+        client = get_inference_client()
+        message = client.chat(messages=messages, max_tokens=INFERENCE_MAX_TOKENS)
+        return message.content or ""
+
+    except InferenceAPIUnavailableError:
+        raise
+    except Exception as e:
+        logger.error("Error analyzing log: %s", e)
+        raise InferenceAPIUnavailableError(f"Error analyzing log: {e}") from e
 
 
 def download_and_analyze_logs(text, ci_system):
@@ -127,27 +192,20 @@ def filter_errors_with_llm(errors_list, requires_llm):
     return _filter_errors()
 
 
-async def _run_analysis_async(error_summary, product):
-    """Run analysis with MCP tool support."""
+async def _run_analysis_async(error_summary):
+    """Run analysis with MCP tool support on the error summary."""
     if mcp_module.mcp_client is None:
         await initialize_global_resources_async()
 
-    # Create custom tools for product-specific and generic analysis
-    product_tool = StructuredTool(
-        name="analyze_product_log",
-        func=partial(product_log_wrapper, product=product),
-        description=f"Analyze {product} logs from error summary. Input should be the error summary.",
+    # Create custom tool for log analysis
+    log_tool = StructuredTool(
+        name="analyze_log",
+        func=analyze_log_tool,
+        description="Analyze logs from error summary. Input should be the error summary.",
         args_schema=SingleStringInput,
     )
 
-    generic_tool = StructuredTool(
-        name="analyze_generic_log",
-        func=generic_log_wrapper,
-        description="Analyze general logs from error summary. Input should be the error summary.",
-        args_schema=SingleStringInput,
-    )
-
-    tools = [product_tool, generic_tool] + mcp_module.mcp_tools
+    tools = [log_tool] + mcp_module.mcp_tools
 
     if not mcp_module.mcp_tools:
         logger.warning(
@@ -158,7 +216,7 @@ async def _run_analysis_async(error_summary, product):
         "Using %d tools (%d MCP tools)", len(tools), len(mcp_module.mcp_tools)
     )
 
-    prompt_config = get_prompt_config(product)
+    prompt_config = get_prompt_config()
     return await analyze_log_with_tools(
         prompt_config=prompt_config,
         error_summary=error_summary,
@@ -166,7 +224,7 @@ async def _run_analysis_async(error_summary, product):
     )
 
 
-def run_agent_analysis(error_summary, product):
+def run_agent_analysis(error_summary):
     """Run agent analysis on the error summary with retry logic."""
     retry_config = get_inference_config().get("retry", {})
 
@@ -184,7 +242,7 @@ def run_agent_analysis(error_summary, product):
     )
     def _with_retry():
         try:
-            return asyncio.run(_run_analysis_async(error_summary, product))
+            return asyncio.run(_run_analysis_async(error_summary))
         except (InferenceAPIUnavailableError, AgentAnalysisLimitExceededError):
             raise
         except Exception as e:

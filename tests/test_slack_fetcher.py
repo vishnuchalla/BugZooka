@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 
 from tests.helpers import CHANNEL_ID, create_test_messages, verify_slack_messages
 from bugzooka.integrations.slack_fetcher import SlackMessageFetcher
-from bugzooka.core.config import get_product_config
 from bugzooka.integrations.inference_client import InferenceAPIUnavailableError
 
 
@@ -88,11 +87,8 @@ def run_slack_fetcher_test(
                 logger = logging.getLogger("test")
                 fetcher = SlackMessageFetcher(channel_id=CHANNEL_ID, logger=logger)
 
-                product_config = get_product_config("OPENSHIFT")
                 fetcher.fetch_messages(
-                    product="OPENSHIFT",
                     ci="PROW",
-                    product_config=product_config,
                     enable_inference=enable_inference,
                 )
 

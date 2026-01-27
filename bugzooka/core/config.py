@@ -94,17 +94,16 @@ def get_inference_config():
     }
 
 
-def get_prompt_config(product_name: str):
+def get_prompt_config():
     """
-    Get prompt configuration for a product.
+    Get product specific prompt configuration. If not provided, generic prompt will be used.
 
-    :param product_name: product name (e.g., "OPENSHIFT", "GENERIC")
     :return: dict with system, user, assistant prompts
     """
-    with open("prompts.json", encoding="utf-8") as f:
+    with open("prompt.json", encoding="utf-8") as f:
         prompt_data = json.load(f)
 
-    return prompt_data.get(f"{product_name}_PROMPT", GENERIC_APP_PROMPT)
+    return prompt_data.get("PROMPT", GENERIC_APP_PROMPT)
 
 
 def configure_logging(log_level):
