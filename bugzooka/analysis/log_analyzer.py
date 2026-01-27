@@ -5,8 +5,6 @@ from functools import partial
 from pydantic import BaseModel, Field
 
 from langchain_core.tools import StructuredTool
-from langchain.agents import AgentType, initialize_agent
-from langchain_community.chat_models.openai import ChatOpenAI
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -14,10 +12,7 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-from bugzooka.core.constants import (
-    MAX_CONTEXT_SIZE,
-    MAX_AGENTIC_ITERATIONS,
-)
+from bugzooka.core.constants import MAX_CONTEXT_SIZE
 from bugzooka.analysis.prompts import ERROR_FILTER_PROMPT
 from bugzooka.analysis.log_summarizer import (
     download_prow_logs,
@@ -34,7 +29,7 @@ from bugzooka.integrations.inference_client import (
 )
 from bugzooka.integrations import mcp_client as mcp_module
 from bugzooka.integrations.mcp_client import initialize_global_resources_async
-from bugzooka.core.config import ANALYSIS_MODE, get_inference_config, get_prompt_config
+from bugzooka.core.config import get_inference_config, get_prompt_config
 from bugzooka.analysis.prow_analyzer import analyze_prow_artifacts
 from bugzooka.core.utils import extract_job_details
 
@@ -88,7 +83,7 @@ def download_and_analyze_logs(text, ci_system):
 
 
 def filter_errors_with_llm(errors_list, requires_llm):
-    """Filter errors using LLM. Uses the global inference client."""
+    """Filter errors using LLM."""
     inference_config = get_inference_config()
     retry_config = inference_config.get("retry", {})
 
@@ -132,10 +127,48 @@ def filter_errors_with_llm(errors_list, requires_llm):
     return _filter_errors()
 
 
+async def _run_analysis_async(error_summary, product):
+    """Run analysis with MCP tool support."""
+    if mcp_module.mcp_client is None:
+        await initialize_global_resources_async()
+
+    # Create custom tools for product-specific and generic analysis
+    product_tool = StructuredTool(
+        name="analyze_product_log",
+        func=partial(product_log_wrapper, product=product),
+        description=f"Analyze {product} logs from error summary. Input should be the error summary.",
+        args_schema=SingleStringInput,
+    )
+
+    generic_tool = StructuredTool(
+        name="analyze_generic_log",
+        func=generic_log_wrapper,
+        description="Analyze general logs from error summary. Input should be the error summary.",
+        args_schema=SingleStringInput,
+    )
+
+    tools = [product_tool, generic_tool] + mcp_module.mcp_tools
+
+    if not mcp_module.mcp_tools:
+        logger.warning(
+            "No MCP tools available. Continuing with basic analysis tools only."
+        )
+
+    logger.info(
+        "Using %d tools (%d MCP tools)", len(tools), len(mcp_module.mcp_tools)
+    )
+
+    prompt_config = get_prompt_config(product)
+    return await analyze_log_with_tools(
+        prompt_config=prompt_config,
+        error_summary=error_summary,
+        tools=tools if tools else None,
+    )
+
+
 def run_agent_analysis(error_summary, product):
-    """Run agent analysis on the error summary. Uses the global inference client."""
-    inference_config = get_inference_config()
-    retry_config = inference_config.get("retry", {})
+    """Run agent analysis on the error summary with retry logic."""
+    retry_config = get_inference_config().get("retry", {})
 
     @retry(
         stop=stop_after_attempt(retry_config["max_attempts"]),
@@ -149,127 +182,15 @@ def run_agent_analysis(error_summary, product):
         ),
         reraise=True,
     )
-    def _run_agent_analysis():
-        if ANALYSIS_MODE == "gemini":
-            logger.info("Using Gemini analysis mode")
-            try:
-                # Execute async MCP initialization and Gemini analysis
-                return asyncio.run(_run_gemini_analysis_async(error_summary, product))
-            except Exception as e:
-                logger.error("Unexpected error during Gemini analysis: %s", str(e), exc_info=True)
-                raise InferenceAPIUnavailableError(
-                    f"Unhandled error during Gemini analysis: {type(e).__name__}: {str(e)}"
-                ) from e
-        else:
-            logger.info("Using agent-based analysis mode")
-            try:
-                return asyncio.run(_run_fallback_agent_analysis_async(error_summary, product))
-            except Exception as e:
-                logger.error("Unexpected error during async agent execution: %s", str(e), exc_info=True)
-                raise InferenceAPIUnavailableError(
-                    f"Unhandled error during agent analysis: {type(e).__name__}: {str(e)}"
-                ) from e
+    def _with_retry():
+        try:
+            return asyncio.run(_run_analysis_async(error_summary, product))
+        except (InferenceAPIUnavailableError, AgentAnalysisLimitExceededError):
+            raise
+        except Exception as e:
+            logger.error("Unexpected error during analysis: %s", str(e), exc_info=True)
+            raise InferenceAPIUnavailableError(
+                f"Unhandled error during analysis: {type(e).__name__}: {str(e)}"
+            ) from e
 
-    async def _run_gemini_analysis_async(error_summary, product):
-        """Run Gemini analysis with MCP tool support."""
-        # Initialize MCP client if not already initialized
-        if mcp_module.mcp_client is None:
-            await initialize_global_resources_async()
-
-        # Create custom tools for product-specific and generic analysis
-        product_tool = StructuredTool(
-            name="analyze_product_log",
-            func=partial(product_log_wrapper, product=product),
-            description=f"Analyze {product} logs from error summary. Input should be the error summary.",
-            args_schema=SingleStringInput
-        )
-
-        generic_tool = StructuredTool(
-            name="analyze_generic_log",
-            func=generic_log_wrapper,
-            description="Analyze general logs from error summary. Input should be the error summary.",
-            args_schema=SingleStringInput
-        )
-
-        # Combine custom tools with MCP tools
-        tools = [product_tool, generic_tool] + mcp_module.mcp_tools
-
-        # Graceful degradation: if no MCP tools loaded, log warning
-        if not mcp_module.mcp_tools:
-            logger.warning(
-                "No MCP tools available for Gemini. "
-                "Continuing with basic analysis tools only."
-            )
-
-        logger.info("Gemini mode: Using %d tools (%d MCP tools)",
-                   len(tools), len(mcp_module.mcp_tools))
-
-        # Get prompt config for this product
-        prompt_config = get_prompt_config(product)
-
-        # Call with tools (await since it's async)
-        response = await analyze_log_with_tools(
-            prompt_config=prompt_config,
-            error_summary=error_summary,
-            tools=tools if tools else None
-        )
-
-        return response
-
-    async def _run_fallback_agent_analysis_async(error_summary, product):
-        """Fallback to agent-based analysis if direct Gemini call fails."""
-
-        if mcp_module.mcp_client is None:
-            await initialize_global_resources_async()
-
-        config = get_inference_config()
-        llm = ChatOpenAI(
-            model=config["model"],
-            api_key=config["token"],
-            base_url=config["url"] + "/v1",
-        )
-
-        # Use StructuredTool to enforce the single string input schema (query: str)
-        product_tool = StructuredTool(
-            name="analyze_product_log",
-            func=partial(product_log_wrapper, product=product),
-            description=f"Analyze {product} logs from error summary. Input should be the error summary.",
-            args_schema=SingleStringInput
-        )
-
-        generic_tool = StructuredTool(
-            name="analyze_generic_log",
-            func=generic_log_wrapper,
-            description="Analyze general logs from error summary. Input should be the error summary.",
-            args_schema=SingleStringInput
-        )
-
-        TOOLS = [product_tool, generic_tool] + mcp_module.mcp_tools
-
-        agent = initialize_agent(
-            tools=TOOLS,
-            llm=llm,
-            agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
-            verbose=True,
-            handle_parsing_errors=True,
-            max_iterations=MAX_AGENTIC_ITERATIONS,
-        )
-
-        query = (
-            f"Please analyze this {product} specific error"
-            f" summary: {error_summary} using the most appropriate"
-            f" tool (product-specific or generic or any other)"
-            f" and provide me potential next steps to debug"
-            f" this issue as a final answer"
-        )
-
-        response = await agent.arun(query)
-
-        if "Agent stopped due to iteration limit or time limit" in response:
-            raise AgentAnalysisLimitExceededError(
-                "Agent analysis exceeded iteration or time limits"
-            )
-
-        return response
-
-    return _run_agent_analysis()
+    return _with_retry()
