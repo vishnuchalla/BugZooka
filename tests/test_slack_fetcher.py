@@ -88,7 +88,6 @@ def run_slack_fetcher_test(
                 fetcher = SlackMessageFetcher(channel_id=CHANNEL_ID, logger=logger)
 
                 fetcher.fetch_messages(
-                    ci="PROW",
                     enable_inference=enable_inference,
                 )
 
