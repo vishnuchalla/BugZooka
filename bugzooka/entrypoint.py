@@ -7,7 +7,6 @@ import threading
 
 from bugzooka.core.config import (
     SLACK_CHANNEL_ID,
-    get_product_config,
     configure_logging,
 )
 from bugzooka.core.constants import (
@@ -23,15 +22,6 @@ def main() -> None:
     VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     parser = argparse.ArgumentParser(description="BugZooka - Slack Log Analyzer Bot")
 
-    parser.add_argument(
-        "--product",
-        type=str,
-        default=os.environ.get("PRODUCT"),
-        help="Product type (e.g., openshift, ansible)",
-    )
-    parser.add_argument(
-        "--ci", type=str, default=os.environ.get("CI"), help="CI system name"
-    )
     parser.add_argument(
         "--log-level",
         type=str,
@@ -58,19 +48,7 @@ def main() -> None:
     configure_logging(args.log_level)
     logger = logging.getLogger(__name__)
 
-    missing_args = []
-    if not args.product:
-        missing_args.append("product or PRODUCT")
-    if not args.ci:
-        missing_args.append("ci or CI")
-    if missing_args:
-        logger.error("Missing required arguments or env vars: {%s}", missing_args)
-        sys.exit(1)
-
     kwargs = {
-        "product": args.product.upper(),
-        "ci": args.ci.upper(),
-        "product_config": get_product_config(product_name=args.product.upper()),
         "enable_inference": args.enable_inference,
     }
 
@@ -89,7 +67,6 @@ def main() -> None:
         # Start socket listener in a separate thread
         socket_thread = threading.Thread(
             target=listener.run,
-            kwargs=kwargs,
             daemon=True,
             name="SocketModeListener",
         )

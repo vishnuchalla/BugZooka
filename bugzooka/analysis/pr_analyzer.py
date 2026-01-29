@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 
 from bugzooka.integrations.mcp_client import initialize_global_resources_async
 import bugzooka.integrations.mcp_client as mcp_module
-from bugzooka.integrations.gemini_client import analyze_with_gemini_agentic
+from bugzooka.integrations.inference_client import analyze_with_agentic
 from bugzooka.analysis.prompts import PR_PERFORMANCE_ANALYSIS_PROMPT
 
 
@@ -154,11 +154,10 @@ async def analyze_pr_with_gemini(text: str) -> dict:
             {"role": "assistant", "content": assistant_prompt},
         ]
 
-        # Use the generic agentic loop from gemini_client
-        result = await analyze_with_gemini_agentic(
+        # Use the agentic loop with tool calling
+        result = await analyze_with_agentic(
             messages=messages,
             tools=mcp_module.mcp_tools,
-            model="gemini-2.5-pro",
         )
         
         # Handle empty results

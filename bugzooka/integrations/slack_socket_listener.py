@@ -261,11 +261,10 @@ class SlackSocketListener(SlackClientBase):
             else:
                 self.logger.debug(f"Ignoring event type: {event_type}")
 
-    def run(self, **kwargs) -> None:
+    def run(self) -> None:
         """
         Start the Socket Mode listener.
 
-        :param kwargs: Configuration arguments (not used, for compatibility)
         """
         self.logger.info("🚀 Starting Slack Socket Mode Listener")
         self.logger.info(f"Async processing enabled with {self.executor._max_workers} worker threads")

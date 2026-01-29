@@ -2,6 +2,8 @@ import os
 from typing import Optional
 
 from dotenv import load_dotenv
+
+from bugzooka.core.constants import RAG_TOP_K_DEFAULT
 from llama_index.core import Settings, load_index_from_storage
 from llama_index.core.llms.utils import resolve_llm
 from llama_index.core.storage.storage_context import StorageContext
@@ -29,7 +31,7 @@ def get_rag_context(query: str, top_k: Optional[int] = None) -> str:
     embed_model_path = os.getenv(
         "EMBEDDING_MODEL_PATH", "sentence-transformers/all-mpnet-base-v2"
     )
-    k = int(os.getenv("RAG_TOP_K", str(top_k if top_k is not None else 5)))
+    k = int(os.getenv("RAG_TOP_K", str(top_k if top_k is not None else RAG_TOP_K_DEFAULT)))
 
     os.environ.setdefault("TRANSFORMERS_CACHE", embed_model_path)
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "0")
