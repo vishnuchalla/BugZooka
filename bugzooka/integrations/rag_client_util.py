@@ -23,12 +23,12 @@ os.makedirs("/tmp/.cache", exist_ok=True)
 # Thread-safe singleton for RAG resources
 _rag_lock = threading.Lock()
 _rag_initialized = False
-_rag_retriever = None
+_vector_index = None
 
 
 def _initialize_rag():
     """Initialize RAG resources once (called with lock held)."""
-    global _rag_initialized, _rag_retriever
+    global _rag_initialized, _vector_index
 
     if _rag_initialized:
         return
@@ -57,12 +57,9 @@ def _initialize_rag():
     storage_context = StorageContext.from_defaults(
         vector_store=FaissVectorStore.from_persist_dir(db_path), persist_dir=db_path
     )
-    vector_index = load_index_from_storage(
+    _vector_index = load_index_from_storage(
         storage_context=storage_context, index_id=index_id
     )
-
-    # Create retriever (reusable)
-    _rag_retriever = vector_index.as_retriever()
 
     _rag_initialized = True
     logger.info("RAG initialization complete")
@@ -71,21 +68,20 @@ def _initialize_rag():
 def get_rag_context(query: str, top_k: Optional[int] = None) -> str:
     """Return concatenated top-k chunks from the local FAISS store for a query.
 
-    Thread-safe: initializes RAG resources once and reuses them.
-    Reads configuration from environment variables and optional .env files.
+    Thread-safe: initializes RAG resources once, creates retriever per query
+    to allow concurrent retrievals without locking.
     """
-    global _rag_retriever
-
     k = int(os.getenv("RAG_TOP_K", str(top_k if top_k is not None else RAG_TOP_K_DEFAULT)))
 
-    # Thread-safe initialization
+    # Thread-safe initialization (lock only held during init)
     with _rag_lock:
         if not _rag_initialized:
             _initialize_rag()
+        # Create a new retriever for this query (allows concurrent retrievals)
+        retriever = _vector_index.as_retriever(similarity_top_k=k)
 
-        # Set top_k for this query (must be done with lock since retriever is shared)
-        _rag_retriever._similarity_top_k = k
-        nodes = _rag_retriever.retrieve(query)
+    # Retrieval happens outside the lock for better concurrency
+    nodes = retriever.retrieve(query)
 
     seen_texts = set()
     formatted_chunks = []
