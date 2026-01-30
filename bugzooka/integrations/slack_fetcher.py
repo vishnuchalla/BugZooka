@@ -545,12 +545,28 @@ class SlackMessageFetcher(SlackClientBase):
 
             # Filter to get only new messages
             new_messages = self._filter_new_messages(messages)
-
-            if not new_messages:
-                self.logger.info("⏳ No new messages.")
-                return
-
+            
             max_ts = self.last_seen_timestamp or "0"
+            
+            if not new_messages:
+                # All messages were filtered. Advance last_seen_timestamp to the MAX
+                # of filtered messages to avoid getting stuck in a loop.
+                for msg in messages:
+                    ts = msg.get("ts")
+                    if ts and float(ts) > float(max_ts):
+                        max_ts = ts
+
+                if max_ts != (self.last_seen_timestamp or "0"):
+                    self.logger.info(
+                        f"⏳ All {len(messages)} messages filtered out. "
+                        f"Advancing last_seen_timestamp from {self.last_seen_timestamp} to {max_ts}"
+                    )
+                    self.last_seen_timestamp = max_ts
+                else:
+                    self.logger.info(
+                        f"⏳ All {len(messages)} messages filtered out (already processed or bot replied)."
+                    )
+                return
 
             try:
                 for msg in new_messages:
