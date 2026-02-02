@@ -7,8 +7,7 @@ install:  ## Install the package dependencies
 	pip install -r requirements.txt
 
 dev-install:  ## Install the package with development dependencies
-	pip install -r requirements.txt
-	pip install pytest pytest-cov pytest-asyncio black ruff mypy types-requests types-PyYAML pre-commit
+	pip install -r requirements-dev.txt
 
 test:  ## Run tests
 	pytest tests/ -v
