@@ -4,21 +4,21 @@
 -r requirements.txt
 
 # Testing
-pytest>=8.0.0
-pytest-cov>=4.1.0
-pytest-asyncio>=0.23.0
+pytest==8.0.0
+pytest-cov==4.1.0
+pytest-asyncio==0.23.0
 
 # Code formatting
-black>=23.9.1
-ruff>=0.1.0
+black==23.9.1
+ruff==0.1.0
 
 # Type checking
-mypy>=1.6.1
+mypy==1.6.1
 types-requests
 types-PyYAML
 
 # Pre-commit hooks
-pre-commit>=3.8.0
+pre-commit==3.8.0
 
 # Linting (if running pylint separately)
-pylint>=3.3.7
+pylint==3.3.7
