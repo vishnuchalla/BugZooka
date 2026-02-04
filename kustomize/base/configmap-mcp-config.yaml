@@ -14,7 +14,7 @@ data:
           "transport": "streamable_http"
         },
         "jira_mcp_server": {
-          "url": "http://jira-mcp.jira-mcp:3031/mcp",
+          "url": "http://jira-mcp.telco-bugzooka:3031/mcp",
           "transport": "streamable_http"
         }
       }

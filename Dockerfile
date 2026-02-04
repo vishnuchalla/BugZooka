@@ -8,22 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     jq \
     bzip2 \
-    gnupg \
     ca-certificates \
-    apt-transport-https \
-    lsb-release \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Google Cloud SDK
-RUN curl -sSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-    | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
-    > /etc/apt/sources.list.d/google-cloud-sdk.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends google-cloud-sdk && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
 
 # Get logjuicer latest version tag dynamically and download + install binary
 RUN set -eux; \
@@ -37,8 +24,13 @@ RUN set -eux; \
 # Copy requirements first for better layer caching
 COPY requirements.txt .
 
-# Install Python dependencies to a target directory for easy copying
-RUN pip install --no-cache-dir --target /app-packages -r requirements.txt
+# Install Python dependencies (including gsutil) to a target directory
+RUN pip install --no-cache-dir --target /app-packages -r requirements.txt gsutil \
+    && find /app-packages -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true \
+    && find /app-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && find /app-packages -name "*.pyc" -delete 2>/dev/null || true \
+    && find /app-packages -name "*.pyo" -delete 2>/dev/null || true \
+    && find /app-packages -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
 
 # ================================
 # Stage 2: Runtime stage
@@ -56,11 +48,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy Python packages from builder stage
 COPY --from=builder /app-packages /app-packages
-
-# Copy Google Cloud SDK from builder stage
-COPY --from=builder /usr/lib/google-cloud-sdk /usr/lib/google-cloud-sdk
-COPY --from=builder /usr/bin/gcloud /usr/bin/gcloud
-COPY --from=builder /usr/bin/gsutil /usr/bin/gsutil
 
 # Copy logjuicer binary from builder stage
 COPY --from=builder /usr/local/bin/logjuicer /usr/local/bin/logjuicer
@@ -80,7 +67,7 @@ COPY . .
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH="/app-packages:$PYTHONPATH"
-ENV PATH="/usr/lib/google-cloud-sdk/bin:/app-packages/bin:$PATH"
+ENV PATH="/app-packages/bin:$PATH"
 
 # Switch to non-root user
 USER 1001
