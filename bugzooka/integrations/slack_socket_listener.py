@@ -19,6 +19,7 @@ from bugzooka.core.config import (
     JEDI_BOT_SLACK_USER_ID,
 )
 from bugzooka.analysis.pr_analyzer import analyze_pr_with_gemini
+from bugzooka.analysis.nightly_regression_analyzer import analyze_nightly_regression
 from bugzooka.integrations.slack_client_base import SlackClientBase
 
 
@@ -106,7 +107,7 @@ class SlackSocketListener(SlackClientBase):
                     text="🔍 Analyzing PR performance... This may take a few moments.",
                     thread_ts=ts,
                 )
-                
+
                 # Analyze PR from text (need to run async function in sync context)
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -116,16 +117,16 @@ class SlackSocketListener(SlackClientBase):
                     )
                 finally:
                     loop.close()
-                
+
                 # Split the result by "====" separator and send each part as a separate message
-                message_content = analysis_result['message']
+                message_content = analysis_result["message"]
                 separator = "=" * 80  # 80 equals signs
-                
+
                 # Check if separator exists in the message
                 if separator in message_content:
                     # Split by separator
                     sections = message_content.split(separator)
-                    
+
                     # Send first section with the header
                     if sections:
                         first_section = sections[0].strip()
@@ -134,7 +135,7 @@ class SlackSocketListener(SlackClientBase):
                             text=f":robot_face: *PR Performance Analysis (AI generated)*\n\n{first_section}",
                             thread_ts=ts,
                         )
-                    
+
                     # Send remaining sections (tables) as separate messages
                     for i, section in enumerate(sections[1:], start=1):
                         section = section.strip()
@@ -152,18 +153,83 @@ class SlackSocketListener(SlackClientBase):
                         text=f":robot_face: *PR Performance Analysis (AI generated)*\n\n{message_content}",
                         thread_ts=ts,
                     )
-                
+
                 if analysis_result["success"]:
                     org, repo, pr_number, version = analysis_result["pr_info"]
-                    self.logger.info(f"✅ Sent PR analysis for {org}/{repo}#{pr_number} (OpenShift {version}) to {user}")
+                    self.logger.info(
+                        f"✅ Sent PR analysis for {org}/{repo}#{pr_number} (OpenShift {version}) to {user}"
+                    )
                 else:
-                    self.logger.warning(f"⚠️ PR analysis failed: {analysis_result['message']}")
-                    
+                    self.logger.warning(
+                        f"⚠️ PR analysis failed: {analysis_result['message']}"
+                    )
+
             except Exception as e:
-                self.logger.error(f"Error processing PR summarization: {e}", exc_info=True)
+                self.logger.error(
+                    f"Error processing PR summarization: {e}", exc_info=True
+                )
                 self.client.chat_postMessage(
                     channel=channel,
                     text=f"❌ Unexpected error: {str(e)}",
+                    thread_ts=ts,
+                )
+            return
+
+        # Check if message contains "inspect" for nightly regression analysis
+        if "inspect" in text.lower():
+            try:
+                # Send initial acknowledgment
+                self.client.chat_postMessage(
+                    channel=channel,
+                    text=":mag: Analyzing nightly build for regressions... This may take a few moments.",
+                    thread_ts=ts,
+                )
+
+                # Analyze nightly regression (need to run async function in sync context)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    analysis_result = loop.run_until_complete(
+                        analyze_nightly_regression(text)
+                    )
+                finally:
+                    loop.close()
+
+                # Send the result
+                message_content = analysis_result["message"]
+
+                self.client.chat_postMessage(
+                    channel=channel,
+                    text=f"*Nightly Regression Analysis*\n\n{message_content}",
+                    thread_ts=ts,
+                )
+
+                if analysis_result["success"]:
+                    nightly_info = analysis_result.get("nightly_info")
+                    if nightly_info:
+                        (
+                            nightly_version,
+                            previous_nightly,
+                            config,
+                            lookback,
+                        ) = nightly_info
+                        self.logger.info(
+                            f"Sent nightly regression analysis for {nightly_version} to {user}"
+                        )
+                    else:
+                        self.logger.info(f"Sent nightly regression analysis to {user}")
+                else:
+                    self.logger.warning(
+                        f"Nightly regression analysis failed: {analysis_result['message']}"
+                    )
+
+            except Exception as e:
+                self.logger.error(
+                    f"Error processing nightly regression analysis: {e}", exc_info=True
+                )
+                self.client.chat_postMessage(
+                    channel=channel,
+                    text=f"Unexpected error: {str(e)}",
                     thread_ts=ts,
                 )
             return
@@ -172,7 +238,10 @@ class SlackSocketListener(SlackClientBase):
         try:
             self.client.chat_postMessage(
                 channel=channel,
-                text="May the force be with you! :performance_jedi:\n\n💡 *Tip:* Try mentioning me with `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` to get performance analysis!",
+                text="May the force be with you! :performance_jedi:\n\n"
+                ":bulb: *Tips:*\n"
+                "- `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` - PR performance analysis\n"
+                "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis",
                 thread_ts=ts,
             )
             self.logger.info(f"✅ Sent greeting to {user}")
@@ -187,6 +256,11 @@ class SlackSocketListener(SlackClientBase):
         :param event: Slack event data
         """
         ts = event.get("ts")
+
+        # Guard against missing timestamp
+        if ts is None:
+            self.logger.warning("Event missing timestamp, skipping")
+            return
 
         # Check if already processing this message
         with self.processing_lock:
@@ -245,10 +319,10 @@ class SlackSocketListener(SlackClientBase):
                     self.logger.warning(f"Failed to add eyes reaction: {e}")
 
                 # Submit to thread pool for async processing
-                future = self.executor.submit(self._submit_mention_for_processing, event)
-                self.logger.debug(
-                    f"Submitted mention {ts} for async processing"
+                future = self.executor.submit(
+                    self._submit_mention_for_processing, event
                 )
+                self.logger.debug(f"Submitted mention {ts} for async processing")
 
                 # Add callback for logging completion/errors
                 def log_completion(f):
@@ -267,7 +341,9 @@ class SlackSocketListener(SlackClientBase):
 
         """
         self.logger.info("🚀 Starting Slack Socket Mode Listener")
-        self.logger.info(f"Async processing enabled with {self.executor._max_workers} worker threads")
+        self.logger.info(
+            f"Async processing enabled with {self.executor._max_workers} worker threads"
+        )
 
         # Register the event handler
         self.socket_client.socket_mode_request_listeners.append(
@@ -320,4 +396,3 @@ class SlackSocketListener(SlackClientBase):
 
         # Call parent class shutdown (will exit)
         super().shutdown(*args)
-

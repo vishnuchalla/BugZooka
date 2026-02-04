@@ -2,7 +2,7 @@ import logging
 import re
 import subprocess
 from bugzooka.core.constants import TOP_N_ERRROS
-from typing import Tuple, Optional
+from typing import Any, Tuple, Optional
 import requests
 
 logger = logging.getLogger(__name__)
@@ -200,3 +200,15 @@ def check_url_ok(url: str, timeout: int = 10) -> Tuple[bool, Optional[int]]:
     except Exception as e:
         logger.warning("URL check failed for %s: %s", url, e)
         return False, None
+
+
+def make_response(success: bool, message: str, **extras: Any) -> dict[str, Any]:
+    """
+    Create a standardized response dictionary.
+
+    :param success: Whether the operation succeeded
+    :param message: Response message
+    :param extras: Additional key-value pairs to include
+    :return: Response dictionary
+    """
+    return {"success": success, "message": message, **extras}

@@ -85,8 +85,8 @@ def verify_slack_messages(
     first_message = posted_messages[0]
     if first_message.get("is_file"):
         # File upload - validate text field instead of blocks
-        assert (
-            ERROR_LOGS_PREVIEW_HEADER in first_message.get("text", "")
+        assert ERROR_LOGS_PREVIEW_HEADER in first_message.get(
+            "text", ""
         ), "File upload should contain Error Logs Preview header"
     else:
         # Regular message - validate blocks

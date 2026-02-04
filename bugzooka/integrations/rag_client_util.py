@@ -46,8 +46,12 @@ def _initialize_rag():
     os.environ.setdefault("TRANSFORMERS_CACHE", embed_model_path)
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "0")
 
-    logger.info("Initializing RAG: db_path=%s, index_id=%s, embed_model=%s",
-                db_path, index_id, embed_model_path)
+    logger.info(
+        "Initializing RAG: db_path=%s, index_id=%s, embed_model=%s",
+        db_path,
+        index_id,
+        embed_model_path,
+    )
 
     # Set global LlamaIndex settings (only once)
     Settings.embed_model = HuggingFaceEmbedding(model_name=embed_model_path)
@@ -71,13 +75,16 @@ def get_rag_context(query: str, top_k: Optional[int] = None) -> str:
     Thread-safe: initializes RAG resources once, creates retriever per query
     to allow concurrent retrievals without locking.
     """
-    k = int(os.getenv("RAG_TOP_K", str(top_k if top_k is not None else RAG_TOP_K_DEFAULT)))
+    k = int(
+        os.getenv("RAG_TOP_K", str(top_k if top_k is not None else RAG_TOP_K_DEFAULT))
+    )
 
     # Thread-safe initialization (lock only held during init)
     with _rag_lock:
         if not _rag_initialized:
             _initialize_rag()
         # Create a new retriever for this query (allows concurrent retrievals)
+        assert _vector_index is not None, "RAG index failed to initialize"
         retriever = _vector_index.as_retriever(similarity_top_k=k)
 
     # Retrieval happens outside the lock for better concurrency

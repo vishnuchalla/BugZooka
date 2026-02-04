@@ -52,7 +52,10 @@ def run_slack_fetcher_test(
         )
         # Mock chat_getPermalink for job history links
         mock_client_instance.chat_getPermalink = MagicMock(
-            return_value={"ok": True, "permalink": "https://example.slack.com/archives/C123/p1234567890"}
+            return_value={
+                "ok": True,
+                "permalink": "https://example.slack.com/archives/C123/p1234567890",
+            }
         )
         mock_web_client.return_value = mock_client_instance
 
@@ -96,7 +99,10 @@ def run_slack_fetcher_test(
 
 class TestSlackFetcher:
     def test_error_processing_inference_enabled(
-        self, mock_slack_post_message, mock_slack_file_upload, mock_slack_conversations_history
+        self,
+        mock_slack_post_message,
+        mock_slack_file_upload,
+        mock_slack_conversations_history,
     ):
         """Test processing error messages with inference enabled."""
         test_messages = create_test_messages(include_error=True, include_success=False)
@@ -112,7 +118,10 @@ class TestSlackFetcher:
         verify_slack_messages(posted_messages)
 
     def test_error_processing_inference_disabled(
-        self, mock_slack_post_message, mock_slack_file_upload, mock_slack_conversations_history
+        self,
+        mock_slack_post_message,
+        mock_slack_file_upload,
+        mock_slack_conversations_history,
     ):
         """Test processing error messages with inference disabled still provides rule based analysis."""
         test_messages = create_test_messages(include_error=True, include_success=False)
@@ -128,7 +137,10 @@ class TestSlackFetcher:
         verify_slack_messages(posted_messages, inference_enabled=False)
 
     def test_error_processing_inference_enabled_but_unavailable(
-        self, mock_slack_post_message, mock_slack_file_upload, mock_slack_conversations_history
+        self,
+        mock_slack_post_message,
+        mock_slack_file_upload,
+        mock_slack_conversations_history,
     ):
         """Test processing error messages with inference enabled but inference API unavailable."""
         test_messages = create_test_messages(include_error=True, include_success=False)
@@ -145,7 +157,10 @@ class TestSlackFetcher:
         verify_slack_messages(posted_messages, inference_available=False)
 
     def test_success_processing(
-        self, mock_slack_post_message, mock_slack_file_upload, mock_slack_conversations_history
+        self,
+        mock_slack_post_message,
+        mock_slack_file_upload,
+        mock_slack_conversations_history,
     ):
         """Test processing success messages, should not post anything to Slack."""
         test_messages = create_test_messages(include_error=False, include_success=True)
@@ -158,6 +173,6 @@ class TestSlackFetcher:
             mock_slack_conversations_history=mock_slack_conversations_history,
         )
 
-        assert len(posted_messages) == 0, (
-            f"Expected no posted messages, got {len(posted_messages)}"
-        )
+        assert (
+            len(posted_messages) == 0
+        ), f"Expected no posted messages, got {len(posted_messages)}"

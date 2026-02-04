@@ -110,7 +110,7 @@ For each config:
 - No emojis in tables
 - Separate each config section with 80 equals signs.
 
-**Remember:** 
+**Remember:**
 - The tools provide percentage changes - use them as provided
 - CHECK thresholds (5% and 10%) before categorizing
 - SORT by absolute percentage change (highest first) - this is mandatory

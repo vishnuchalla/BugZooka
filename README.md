@@ -77,7 +77,7 @@ BugZooka supports two complementary modes for monitoring Slack channels that can
    # Run with both polling AND socket mode
    make run ARGS="--enable-socket-mode"
    ```
-   
+
    **Socket Mode Requirements:**
    - An app-level token (`xapp-*`) must be configured as `SLACK_APP_TOKEN`
    - Socket Mode must be enabled in your Slack app settings

@@ -101,9 +101,7 @@ class TestSlackSocketListener:
 
                 assert listener._should_process_message(event) is True
 
-    def test_should_process_any_channel(
-        self, mock_socket_mode_client, mock_web_client
-    ):
+    def test_should_process_any_channel(self, mock_socket_mode_client, mock_web_client):
         """Test that mentions in any channel are processed."""
         logger = logging.getLogger("test")
 
@@ -127,7 +125,10 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                with patch("bugzooka.integrations.slack_socket_listener.JEDI_BOT_SLACK_USER_ID", "UBOTID"):
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.JEDI_BOT_SLACK_USER_ID",
+                    "UBOTID",
+                ):
                     listener = SlackSocketListener(logger=logger)
 
                     event = create_app_mention_event(
@@ -159,7 +160,12 @@ class TestSlackSocketListener:
                 # Verify greeting message was sent (reaction happens earlier in the flow)
                 mock_web_client.return_value.chat_postMessage.assert_called_once_with(
                     channel=CHANNEL_ID,
-                    text="May the force be with you! :performance_jedi:\n\n💡 *Tip:* Try mentioning me with `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` to get performance analysis!",
+                    text=(
+                        "May the force be with you! :performance_jedi:\n\n"
+                        ":bulb: *Tips:*\n"
+                        "- `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` - PR performance analysis\n"
+                        "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis"
+                    ),
                     thread_ts="1234567890.123456",
                 )
 
@@ -223,7 +229,9 @@ class TestSlackSocketListener:
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(logger=logger)
 
-                event = create_app_mention_event(text="<@UBOTID> test", ts="1234567890.123456")
+                event = create_app_mention_event(
+                    text="<@UBOTID> test", ts="1234567890.123456"
+                )
                 socket_request = create_socket_mode_request(event)
 
                 mock_client = MagicMock()
@@ -286,7 +294,9 @@ class TestSlackSocketListener:
 
                 mock_client = MagicMock()
 
-                with patch.object(listener, "_submit_mention_for_processing") as mock_handle:
+                with patch.object(
+                    listener, "_submit_mention_for_processing"
+                ) as mock_handle:
                     listener._process_socket_request(mock_client, socket_request)
 
                     # Should acknowledge but not call handler
@@ -318,3 +328,147 @@ class TestSlackSocketListener:
                 # Verify chat_postMessage was attempted
                 mock_web_client.return_value.chat_postMessage.assert_called_once()
 
+    def test_process_mention_triggers_nightly_analysis(
+        self, mock_socket_mode_client, mock_web_client
+    ):
+        """Test processing inspect command triggers nightly analysis."""
+        logger = logging.getLogger("test")
+
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_nightly_regression"
+                ) as mock_analyze:
+                    # Create a mock NamedTuple-like object
+                    from bugzooka.analysis.nightly_regression_analyzer import (
+                        NightlyInspectRequest,
+                    )
+
+                    mock_nightly_info = NightlyInspectRequest(
+                        nightly_version="4.22.0-0.nightly-2026-01-05-203335",
+                        previous_nightly=None,
+                        config=None,
+                        lookback_days="15",
+                    )
+                    mock_analyze.return_value = {
+                        "success": True,
+                        "message": "No regressions detected",
+                        "nightly_info": mock_nightly_info,
+                    }
+
+                    listener = SlackSocketListener(logger=logger)
+
+                    event = create_app_mention_event(
+                        text="<@UBOTID> inspect 4.22.0-0.nightly-2026-01-05-203335",
+                        user="U12345",
+                        ts="1234567890.123456",
+                    )
+
+                    listener._process_mention(event)
+
+                    # Verify acknowledgment and result messages were sent
+                    assert mock_web_client.return_value.chat_postMessage.call_count >= 2
+                    mock_analyze.assert_called_once()
+
+    def test_process_mention_nightly_analysis_with_options(
+        self, mock_socket_mode_client, mock_web_client
+    ):
+        """Test processing inspect command with vs/config/days options."""
+        logger = logging.getLogger("test")
+
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_nightly_regression"
+                ) as mock_analyze:
+                    from bugzooka.analysis.nightly_regression_analyzer import (
+                        NightlyInspectRequest,
+                    )
+
+                    mock_nightly_info = NightlyInspectRequest(
+                        nightly_version="4.22.0-0.nightly-2026-01-05-203335",
+                        previous_nightly="4.22.0-0.nightly-2026-01-01-123456",
+                        config="trt-external-payload-node-density.yaml",
+                        lookback_days="30",
+                    )
+                    mock_analyze.return_value = {
+                        "success": True,
+                        "message": "Regression detected in metric X",
+                        "nightly_info": mock_nightly_info,
+                    }
+
+                    listener = SlackSocketListener(logger=logger)
+
+                    event = create_app_mention_event(
+                        text="<@UBOTID> inspect 4.22.0-0.nightly-2026-01-05-203335 vs 4.22.0-0.nightly-2026-01-01-123456 for config trt-external-payload-node-density.yaml for 30 days",
+                        user="U12345",
+                        ts="1234567890.123456",
+                    )
+
+                    listener._process_mention(event)
+
+                    # Verify the analyzer was called with the full text
+                    mock_analyze.assert_called_once()
+                    call_args = mock_analyze.call_args[0][0]
+                    assert "4.22.0-0.nightly-2026-01-05-203335" in call_args
+                    assert "4.22.0-0.nightly-2026-01-01-123456" in call_args
+
+    def test_process_mention_nightly_analysis_failure(
+        self, mock_socket_mode_client, mock_web_client
+    ):
+        """Test processing inspect command when analysis fails."""
+        logger = logging.getLogger("test")
+
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_nightly_regression"
+                ) as mock_analyze:
+                    mock_analyze.return_value = {
+                        "success": False,
+                        "message": "Invalid nightly version format",
+                    }
+
+                    listener = SlackSocketListener(logger=logger)
+
+                    event = create_app_mention_event(
+                        text="<@UBOTID> inspect invalid-version",
+                        user="U12345",
+                        ts="1234567890.123456",
+                    )
+
+                    listener._process_mention(event)
+
+                    # Verify messages were sent (acknowledgment + error result)
+                    assert mock_web_client.return_value.chat_postMessage.call_count >= 2
+
+    def test_process_mention_nightly_analysis_exception(
+        self, mock_socket_mode_client, mock_web_client
+    ):
+        """Test processing inspect command when analyzer raises exception."""
+        logger = logging.getLogger("test")
+
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_nightly_regression"
+                ) as mock_analyze:
+                    mock_analyze.side_effect = Exception("MCP connection failed")
+
+                    listener = SlackSocketListener(logger=logger)
+
+                    event = create_app_mention_event(
+                        text="<@UBOTID> inspect 4.22.0-0.nightly-2026-01-05-203335",
+                        user="U12345",
+                        ts="1234567890.123456",
+                    )
+
+                    # Should not raise exception
+                    listener._process_mention(event)
+
+                    # Verify error message was sent
+                    calls = mock_web_client.return_value.chat_postMessage.call_args_list
+                    error_call = calls[-1]
+                    assert "Unexpected error" in error_call.kwargs.get(
+                        "text", error_call[1].get("text", "")
+                    )
