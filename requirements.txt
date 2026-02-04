@@ -30,6 +30,3 @@ pydantic-settings==2.8.1
 tenacity==9.0.0
 python-dotenv==1.0.1
 PyYAML==6.0.2
-
-# TEMP fix for GHA, to be removed once merged into main
-pylint==3.3.7
