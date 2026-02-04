@@ -12,7 +12,7 @@ from bugzooka.integrations.mcp_client import (
     initialize_global_resources_async,
     tool_not_found_error,
 )
-from bugzooka.analysis.utils import make_response
+from bugzooka.core.utils import make_response
 from bugzooka.integrations.inference_client import analyze_with_agentic
 from bugzooka.analysis.prompts import PR_PERFORMANCE_ANALYSIS_PROMPT
 import bugzooka.integrations.mcp_client as mcp_module

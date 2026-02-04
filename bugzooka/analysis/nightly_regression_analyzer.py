@@ -13,7 +13,7 @@ from bugzooka.integrations.mcp_client import (
     invoke_mcp_tool,
     tool_not_found_error,
 )
-from bugzooka.analysis.utils import make_response
+from bugzooka.core.utils import make_response
 
 
 logger = logging.getLogger(__name__)

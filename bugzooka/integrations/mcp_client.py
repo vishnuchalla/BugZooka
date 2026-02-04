@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from bugzooka.analysis.utils import make_response
+from bugzooka.core.utils import make_response
 
 logger = logging.getLogger(__name__)
 
