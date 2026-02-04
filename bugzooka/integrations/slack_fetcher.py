@@ -46,10 +46,9 @@ class SlackMessageFetcher(SlackClientBase):
         """Initialize Slack client and channel details."""
         # Initialize base class (handles WebClient, logger, channel_id, running flag, signal handler)
         super().__init__(logger, channel_id)
-        
+
         self.poll_interval = poll_interval  # How often to fetch messages
         self.last_seen_timestamp = None  # Track the latest message timestamp
-
 
     def _sanitize_job_text(self, text: str) -> str:
         """
@@ -85,7 +84,6 @@ class SlackMessageFetcher(SlackClientBase):
         cleaned = cleaned.strip()
 
         return cleaned
-
 
     def _handle_job_history(
         self,
@@ -415,9 +413,7 @@ class SlackMessageFetcher(SlackClientBase):
         # Check for expected RAG artifacts (JSON index/store files)
         return any(f.name.endswith(".json") for f in os.scandir(rag_dir))
 
-    def _process_message(
-        self, msg, enable_inference
-    ):
+    def _process_message(self, msg, enable_inference):
         """Process a single message through the complete pipeline."""
         user = msg.get("user", "Unknown")
         text = msg.get("text", "No text available")
@@ -545,9 +541,9 @@ class SlackMessageFetcher(SlackClientBase):
 
             # Filter to get only new messages
             new_messages = self._filter_new_messages(messages)
-            
+
             max_ts = self.last_seen_timestamp or "0"
-            
+
             if not new_messages:
                 # All messages were filtered. Advance last_seen_timestamp to the MAX
                 # of filtered messages to avoid getting stuck in a loop.
@@ -575,9 +571,7 @@ class SlackMessageFetcher(SlackClientBase):
                     if ts and float(ts) > float(max_ts):
                         max_ts = ts
 
-                    processed_ts = self._process_message(
-                        msg, enable_inference
-                    )
+                    processed_ts = self._process_message(msg, enable_inference)
 
                     if processed_ts and float(processed_ts) > float(
                         self.last_seen_timestamp or 0
@@ -681,7 +675,7 @@ class SlackMessageFetcher(SlackClientBase):
         """Handles graceful shutdown on user interruption."""
         if not self.running:
             return
-            
+
         self.logger.info("🛑 Received exit signal. Stopping message fetcher...")
         # Call parent class shutdown (will set running=False and exit)
         super().shutdown(*args)

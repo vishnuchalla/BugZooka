@@ -2,7 +2,6 @@ import argparse
 import logging
 import os
 import signal
-import sys
 import threading
 
 from bugzooka.core.config import (
@@ -57,10 +56,9 @@ def main() -> None:
     )
 
     listener = None
-    
+
     # If socket mode is enabled, start it in a separate thread
     if args.enable_socket_mode:
-
         logger.info("Starting Socket Mode (WebSocket) for responding to @ mentions")
         listener = SlackSocketListener(logger=logger)
 
@@ -79,7 +77,7 @@ def main() -> None:
         if listener:
             listener.shutdown(signum, frame)
         fetcher.shutdown(signum, frame)
-    
+
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 

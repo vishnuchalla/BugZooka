@@ -7,9 +7,9 @@ import logging
 import re
 from typing import Optional, NamedTuple
 
-from bugzooka.analysis.mcp_utils import (
-    ensure_mcp_initialized,
+from bugzooka.integrations.mcp_client import (
     get_mcp_tool,
+    initialize_global_resources_async,
     invoke_mcp_tool,
     tool_not_found_error,
 )
@@ -140,7 +140,7 @@ async def analyze_nightly_regression(text: str) -> dict:
     )
 
     # Ensure MCP client is initialized
-    await ensure_mcp_initialized()
+    await initialize_global_resources_async()
 
     # Get the MCP tool
     orion_tool = get_mcp_tool(TOOL_NAME)
@@ -174,10 +174,9 @@ async def analyze_nightly_regression(text: str) -> dict:
 
         # Format the response for Slack
         header = (
-            f"*Nightly Regression Analysis*\n"
-            f"Nightly: `{parsed.nightly_version}`{comparison_display}\n"
-            f"Config: {config_display}\n"
-            f"Lookback: {parsed.lookback_days} days\n\n"
+            f"*Nightly:* `{parsed.nightly_version}`{comparison_display}\n"
+            f"*Config:* {config_display}\n"
+            f"*Lookback:* {parsed.lookback_days} days\n\n"
         )
 
         return make_response(

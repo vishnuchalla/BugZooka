@@ -54,7 +54,9 @@ def get_inference_config():
 
     verify_ssl_env = os.getenv("INFERENCE_VERIFY_SSL", "true").lower()
     verify_ssl = verify_ssl_env == "true"
-    timeout = float(os.getenv("INFERENCE_API_TIMEOUT_SECONDS", str(INFERENCE_API_TIMEOUT_SECONDS)))
+    timeout = float(
+        os.getenv("INFERENCE_API_TIMEOUT_SECONDS", str(INFERENCE_API_TIMEOUT_SECONDS))
+    )
 
     # Optional parameters (not all APIs support these, e.g. Gemini doesn't support frequency_penalty)
     top_p_env = os.getenv("INFERENCE_TOP_P")
@@ -74,7 +76,8 @@ def get_inference_config():
         "retry": {
             "max_attempts": int(
                 os.getenv(
-                    "INFERENCE_API_RETRY_MAX_ATTEMPTS", str(INFERENCE_API_RETRY_ATTEMPTS)
+                    "INFERENCE_API_RETRY_MAX_ATTEMPTS",
+                    str(INFERENCE_API_RETRY_ATTEMPTS),
                 )
             ),
             "delay": float(

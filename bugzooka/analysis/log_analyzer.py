@@ -50,14 +50,11 @@ def _with_retry(func):
 
 class SingleStringInput(BaseModel):
     """Schema for tools that accept a single string argument."""
+
     query: str = Field(description="The full error summary text to analyze.")
 
 
-async def analyze_log_with_tools(
-    prompt_config: dict,
-    error_summary: str,
-    tools=None
-):
+async def analyze_log_with_tools(prompt_config: dict, error_summary: str, tools=None):
     """
     Analyzes log summaries using an LLM with prompts and optional tool calling.
 
@@ -70,7 +67,9 @@ async def analyze_log_with_tools(
         logger.info("Starting log analysis with tools")
 
         try:
-            formatted_content = prompt_config["user"].format(error_summary=error_summary)
+            formatted_content = prompt_config["user"].format(
+                error_summary=error_summary
+            )
         except KeyError:
             formatted_content = prompt_config["user"].format(summary=error_summary)
 
@@ -90,10 +89,7 @@ async def analyze_log_with_tools(
             {"role": "assistant", "content": prompt_config["assistant"]},
         ]
 
-        return await analyze_with_agentic(
-            messages=messages,
-            tools=tools
-        )
+        return await analyze_with_agentic(messages=messages, tools=tools)
 
     except InferenceAPIUnavailableError:
         raise

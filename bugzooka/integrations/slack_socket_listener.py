@@ -200,7 +200,7 @@ class SlackSocketListener(SlackClientBase):
 
                 self.client.chat_postMessage(
                     channel=channel,
-                    text=f":robot_face: *Nightly Regression Analysis (AI generated)*\n\n{message_content}",
+                    text=f"*Nightly Regression Analysis*\n\n{message_content}",
                     thread_ts=ts,
                 )
 

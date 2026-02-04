@@ -7,9 +7,9 @@ import logging
 import re
 from typing import Optional, Tuple
 
-from bugzooka.analysis.mcp_utils import (
-    ensure_mcp_initialized,
+from bugzooka.integrations.mcp_client import (
     get_mcp_tool,
+    initialize_global_resources_async,
     tool_not_found_error,
 )
 from bugzooka.analysis.utils import make_response
@@ -116,7 +116,7 @@ async def analyze_pr_with_gemini(text: str) -> dict:
     )
 
     # Ensure MCP client is initialized
-    await ensure_mcp_initialized()
+    await initialize_global_resources_async()
 
     # Check if Orion MCP tool is available
     orion_tool = get_mcp_tool(TOOL_NAME)
