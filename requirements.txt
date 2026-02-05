@@ -16,7 +16,7 @@ llama-index-embeddings-huggingface==0.5.5
 llama-index-vector-stores-faiss==0.4.0
 
 # LangChain ecosystem (MCP + tools)
-langchain-core==0.3.80
+langchain-core==0.3.81
 langchain-mcp-adapters==0.1.10
 mcp==1.12.4
 
