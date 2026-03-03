@@ -164,7 +164,8 @@ class TestSlackSocketListener:
                         "May the force be with you! :performance_jedi:\n\n"
                         ":bulb: *Tips:*\n"
                         "- `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` - PR performance analysis\n"
-                        "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis"
+                        "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis\n"
+                        "- `performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...] [verbose]` - Performance metrics summary"
                     ),
                     thread_ts="1234567890.123456",
                 )
