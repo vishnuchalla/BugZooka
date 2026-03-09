@@ -105,13 +105,13 @@ BugZooka can generate a configurable performance summary across metrics for one 
 
 **Usage:**
 ```
-@BugZooka performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...] [verbose]
+@BugZooka performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...]
 ```
 
 **Examples:**
 ```
 @BugZooka performance summary 14d
-@BugZooka performance summary 30d ALL verbose
+@BugZooka performance summary 30d ALL
 @BugZooka performance summary 7d trt-external-payload-node-density.yaml 4.19
 @BugZooka performance summary 7d trt-external-payload-node-density.yaml 4.19,4.20,4.22
 ```
@@ -120,7 +120,8 @@ BugZooka can generate a configurable performance summary across metrics for one 
 - If no config is provided, defaults to a curated control-plane config list.
 - `ALL` uses all 41 available Orion configs (fallback list is used if MCP is unavailable).
 - Socket Mode has to be enabled.
-- Without the verbose option, the default is ranking the top 15 most influential metrics with visual hints.
+- Default output shows per-config tables sorted by absolute Change (%).
+
 ### **Supported Bot Triggers**
 #### **Job Summary**
 * `summarize Nd` - Job summary for N number of days.

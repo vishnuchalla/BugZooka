@@ -253,7 +253,6 @@ class SlackSocketListener(SlackClientBase):
                     configs,
                     versions,
                     lookback_days,
-                    verbose,
                     use_all_configs,
                 ) = parse_perf_summary_args(text)
 
@@ -266,7 +265,6 @@ class SlackSocketListener(SlackClientBase):
                             configs,
                             versions,
                             lookback_days=lookback_days,
-                            verbose=verbose,
                             use_all_configs=use_all_configs,
                         )
                     )
@@ -314,7 +312,7 @@ class SlackSocketListener(SlackClientBase):
                 ":bulb: *Tips:*\n"
                 "- `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` - PR performance analysis\n"
                 "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis\n"
-                "- `performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...] [verbose]` - Performance metrics summary",
+                "- `performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...]` - Performance metrics summary",
                 thread_ts=ts,
             )
             self.logger.info(f"✅ Sent greeting to {user}")

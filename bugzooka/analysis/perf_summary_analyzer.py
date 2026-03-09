@@ -126,6 +126,22 @@ def _calculate_stats(values: List[float]) -> dict:
     }
 
 
+def _format_metric_value(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, (int, float)):
+        return f"{value:.2f}"
+    return str(value)
+
+
+def _format_runs(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, (int, float)):
+        return str(int(value))
+    return str(value)
+
+
 def _calculate_percentage_change(
     current_values: List[float], previous_values: List[float]
 ) -> Optional[float]:
@@ -146,6 +162,13 @@ def _calculate_percentage_change(
         return None
 
     return round(((current_avg - previous_avg) / previous_avg) * 100, 2)
+
+
+def _change_sort_key(row: dict[str, Any]) -> float:
+    change_val = row.get("change")
+    if isinstance(change_val, (int, float)):
+        return abs(change_val)
+    return -1
 
 
 def _change_hint(change: Optional[float], meta: dict) -> str:
@@ -211,7 +234,7 @@ def _format_metrics_table(
     include_config: bool,
     note_prefix: str,
 ) -> str:
-    headers = ["Metric", "Min", "Max", "Avg", "Change (%)"]
+    headers = ["Metric", "Runs", "Min", "Max", "Avg", "Change (%)"]
     if include_config:
         headers = ["Config", *headers]
 
@@ -221,11 +244,13 @@ def _format_metrics_table(
     for row in rows:
         change_display = _change_hint(row.get("change"), row.get("meta", {}))
         metric_label = _truncate_text(str(row.get("metric", "")), max_metric_len)
+        runs_display = _format_runs(row.get("runs"))
         row_values = [
             metric_label,
-            str(row.get("min", "n/a")),
-            str(row.get("max", "n/a")),
-            str(row.get("avg", "n/a")),
+            runs_display,
+            _format_metric_value(row.get("min", "n/a")),
+            _format_metric_value(row.get("max", "n/a")),
+            _format_metric_value(row.get("avg", "n/a")),
             str(change_display),
         ]
         if include_config:
@@ -233,10 +258,26 @@ def _format_metrics_table(
             row_values = [config_label, *row_values]
         formatted_rows.append(row_values)
 
+    run_values: list[int] = []
+    for row in rows:
+        runs = row.get("runs")
+        if isinstance(runs, (int, float)):
+            run_values.append(int(runs))
+    if run_values:
+        min_runs = min(run_values)
+        max_runs = max(run_values)
+        runs_note = (
+            f"{min_runs} runs"
+            if min_runs == max_runs
+            else f"{min_runs}-{max_runs} runs"
+        )
+    else:
+        runs_note = "0 runs"
+
     table_body = _render_table(headers, formatted_rows)
     metrics_note = (
         f"{note_prefix} {len(rows)} of {total_metrics} metrics, "
-        f"last {lookback_days}d vs prior {lookback_days}d"
+        f"{runs_note}, last {lookback_days}d vs prior {lookback_days}d"
     )
     return "\n".join(
         [
@@ -407,19 +448,19 @@ async def get_performance_data(
 
 def parse_perf_summary_args(
     text: str,
-) -> tuple[List[str], List[str], Optional[int], bool, bool]:
+) -> tuple[List[str], List[str], Optional[int], bool]:
     """
-    Parse configs, versions, lookback days, and verbose flag from a message.
-    Expected format: "performance summary <Nd> [config.yaml,...] [version ...] [verbose]"
+    Parse configs, versions, and lookback days from a message.
+    Expected format: "performance summary <Nd> [config.yaml,...] [version ...]"
     """
     text_lower = text.lower()
     match = re.search(r"performance\s+summary\s*(.*)", text_lower)
     if not match:
-        return [], [], None, False, False
+        return [], [], None, False
 
     args_text = match.group(1).strip()
     if not args_text:
-        return [], [], None, False, False
+        return [], [], None, False
 
     parts = args_text.split()
     configs: List[str] = []
@@ -427,7 +468,6 @@ def parse_perf_summary_args(
     seen_configs: set[str] = set()
     seen_versions: set[str] = set()
     lookback_days: Optional[int] = None
-    verbose = False
     all_configs = False
     comma_present = "," in args_text
 
@@ -447,8 +487,8 @@ def parse_perf_summary_args(
             continue
 
         token_lower = token.lower().strip(",")
-        if token_lower == "verbose":
-            verbose = True
+        # Ignore legacy mode keywords so they don't get parsed as versions/configs.
+        if token_lower in {"concise", "summary", "simple", "verbose"}:
             continue
         if token_lower in {"all", "all-configs", "allconfigs"}:
             all_configs = True
@@ -481,14 +521,13 @@ def parse_perf_summary_args(
     if not comma_present and len(configs) > 1:
         configs = configs[:1]
 
-    return configs, versions, lookback_days, verbose, all_configs
+    return configs, versions, lookback_days, all_configs
 
 
 async def analyze_performance(
     configs: Optional[List[str]] = None,
     versions: Optional[List[str]] = None,
     lookback_days: Optional[int] = None,
-    verbose: bool = False,
     use_all_configs: bool = False,
 ) -> dict:
     """
@@ -501,15 +540,13 @@ async def analyze_performance(
                     (defaults to [_DEFAULT_VERSION] when empty).
                     If None or empty, uses default version.
     :param lookback_days: Lookback period in days for stats and change calculation
-    :param verbose: If True, show per-config tables; otherwise show top changes summary
     :return: Dict with 'success' boolean and 'message' string
     """
     logger.info(
-        "analyze_performance called with configs=%s, versions=%s, lookback_days=%s, verbose=%s, use_all_configs=%s",
+        "analyze_performance called with configs=%s, versions=%s, lookback_days=%s, use_all_configs=%s",
         configs,
         versions,
         lookback_days,
-        verbose,
         use_all_configs,
     )
 
@@ -550,16 +587,11 @@ async def analyze_performance(
         else:
             versions = requested_versions
         missing_configs: List[str] = []
-        aggregated_rows: dict[str, List[dict[str, Any]]] = {ver: [] for ver in versions}
-        total_metrics = 0
-
         for cfg in configs:
             metrics, meta_map = await get_metrics(cfg, versions[0])
             if not metrics:
                 missing_configs.append(cfg)
                 continue
-
-            total_metrics += len(metrics)
 
             # Fetch raw data for all metrics and all versions
             for ver in versions:
@@ -572,11 +604,13 @@ async def analyze_performance(
                         lookback=lookback_days,
                     )
                     this_period_values = this_period_data.values
+                    run_count = len(this_period_values)
 
                     if not this_period_values:
                         row = {
                             "config": cfg,
                             "metric": metric,
+                            "runs": 0,
                             "min": "n/a",
                             "max": "n/a",
                             "avg": "n/a",
@@ -584,7 +618,6 @@ async def analyze_performance(
                             "meta": meta_map.get(metric, {}),
                         }
                         rows.append(row)
-                        aggregated_rows[ver].append(row)
                         continue
 
                     two_period_data = await get_performance_data(
@@ -608,6 +641,7 @@ async def analyze_performance(
                     row = {
                         "config": cfg,
                         "metric": metric,
+                        "runs": run_count,
                         "min": stats["min"],
                         "max": stats["max"],
                         "avg": stats["avg"],
@@ -615,62 +649,18 @@ async def analyze_performance(
                         "meta": meta_map.get(metric, {}),
                     }
                     rows.append(row)
-                    aggregated_rows[ver].append(row)
 
-                if verbose:
-                    result_parts.append(
-                        _format_metrics_table(
-                            title=f"*Config: {cfg}*",
-                            version=ver,
-                            rows=rows,
-                            total_metrics=len(metrics),
-                            lookback_days=lookback_days,
-                            include_config=False,
-                            note_prefix="showing",
-                        )
+                result_parts.append(
+                    _format_metrics_table(
+                        title=f"*Config: {cfg}*",
+                        version=ver,
+                        rows=sorted(rows, key=_change_sort_key, reverse=True),
+                        total_metrics=len(metrics),
+                        lookback_days=lookback_days,
+                        include_config=False,
+                        note_prefix="showing",
                     )
-
-        if not verbose:
-            limit = 15
-
-            def _change_sort_key(row: dict[str, Any]) -> float:
-                change_val = row.get("change")
-                if isinstance(change_val, (int, float)):
-                    return abs(change_val)
-                return -1
-
-            def _include_in_summary(row: dict[str, Any]) -> bool:
-                keys = ("change", "min", "max", "avg")
-                for key in keys:
-                    val = row.get(key, "n/a")
-                    if isinstance(val, (int, float)):
-                        return True
-                    if isinstance(val, str) and val.lower() != "n/a":
-                        return True
-                return False
-
-            for ver in versions:
-                rows = [
-                    row
-                    for row in aggregated_rows.get(ver, [])
-                    if _include_in_summary(row)
-                ]
-                sorted_rows = sorted(rows, key=_change_sort_key, reverse=True)
-                top_rows = sorted_rows[:limit]
-                if top_rows:
-                    result_parts.append(
-                        _format_metrics_table(
-                            title=f"*Top {limit} Changes*",
-                            version=ver,
-                            rows=top_rows,
-                            total_metrics=total_metrics,
-                            lookback_days=lookback_days,
-                            include_config=True,
-                            note_prefix="top",
-                        )
-                    )
-                else:
-                    result_parts.append(f"*Version {ver}*: no performance data found")
+                )
 
         if missing_configs:
             result_parts.append(f"*No metrics found for:* {', '.join(missing_configs)}")
