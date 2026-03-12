@@ -244,7 +244,7 @@ class SlackSocketListener(SlackClientBase):
                 # Send initial acknowledgment
                 self.client.chat_postMessage(
                     channel=channel,
-                    text="📊 Gathering performance summary... This may take a moment.",
+                    text="📊 Gathering performance summary... This will take a moment.",
                     thread_ts=ts,
                 )
 

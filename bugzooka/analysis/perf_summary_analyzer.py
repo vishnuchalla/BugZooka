@@ -776,13 +776,11 @@ async def analyze_performance(
                     two_period_values = two_period_data.values
 
                     this_period_count = len(this_period_values)
-                    if two_period_values:
-                        if len(two_period_values) > this_period_count:
-                            previous_period_values = two_period_values[
-                                this_period_count:
-                            ]
-                    else:
-                        previous_period_values = []
+                    previous_period_values = []
+                    if len(two_period_values) > this_period_count:
+                        # Orion values are ordered oldest -> newest, so the
+                        # trailing slice overlaps the current lookback window.
+                        previous_period_values = two_period_values[:-this_period_count]
 
                     stats = _calculate_stats(this_period_values)
                     change = _calculate_percentage_change(
