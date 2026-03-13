@@ -289,6 +289,107 @@ def _format_metrics_table(
     )
 
 
+# Split a single oversized table into standalone code blocks so Slack keeps formatting intact.
+def _split_metrics_table_for_slack(
+    *,
+    title: str,
+    version: str,
+    rows: List[dict],
+    total_metrics: int,
+    lookback_days: int,
+    include_config: bool,
+    note_prefix: str,
+) -> List[str]:
+    full_message = _format_metrics_table(
+        title=title,
+        version=version,
+        rows=rows,
+        total_metrics=total_metrics,
+        lookback_days=lookback_days,
+        include_config=include_config,
+        note_prefix=note_prefix,
+    )
+    if len(full_message) <= _SLACK_MESSAGE_LIMIT:
+        return [full_message]
+
+    row_chunks: List[List[dict]] = []
+    current_chunk: List[dict] = []
+    for row in rows:
+        candidate_chunk = [*current_chunk, row]
+        candidate_message = _format_metrics_table(
+            title=title,
+            version=version,
+            rows=candidate_chunk,
+            total_metrics=total_metrics,
+            lookback_days=lookback_days,
+            include_config=include_config,
+            note_prefix=note_prefix,
+        )
+        if current_chunk and len(candidate_message) > _SLACK_MESSAGE_LIMIT:
+            row_chunks.append(current_chunk)
+            current_chunk = [row]
+        else:
+            current_chunk = candidate_chunk
+
+    if current_chunk:
+        row_chunks.append(current_chunk)
+
+    if len(row_chunks) <= 1:
+        return [full_message]
+
+    chunk_messages: List[str] = []
+    total_parts = len(row_chunks)
+    for index, row_chunk in enumerate(row_chunks, start=1):
+        chunk_messages.append(
+            _format_metrics_table(
+                title=f"{title} (part {index}/{total_parts})",
+                version=version,
+                rows=row_chunk,
+                total_metrics=total_metrics,
+                lookback_days=lookback_days,
+                include_config=include_config,
+                note_prefix=note_prefix,
+            )
+        )
+
+    return chunk_messages
+
+
+def _normalize_metric_names(metrics_data: Any) -> List[str]:
+    raw_metrics: List[str] = []
+
+    if isinstance(metrics_data, str):
+        raw_metrics.append(metrics_data)
+    elif isinstance(metrics_data, list):
+        for item in metrics_data:
+            raw_metrics.extend(_normalize_metric_names(item))
+    elif isinstance(metrics_data, dict):
+        for value in metrics_data.values():
+            raw_metrics.extend(_normalize_metric_names(value))
+
+    normalized_metrics: List[str] = []
+    seen_metrics: set[str] = set()
+    for metric in raw_metrics:
+        if metric in {"runs", "timestamp"}:
+            continue
+        if metric not in seen_metrics:
+            normalized_metrics.append(metric)
+            seen_metrics.add(metric)
+    return normalized_metrics
+
+
+# true means it's empty result just no data found(no error).
+def _is_no_data_fetch_result(data: PerformanceData) -> bool:
+    if data.values:
+        return False
+    if data.error is None:
+        return True
+    normalized_error = " ".join(str(data.error).split()).lower()
+    return normalized_error in {"", "no data found"} or normalized_error.startswith(
+        "no data found"
+    )
+
+
 async def get_configs() -> List[str]:
     """
     Get list of available Orion configuration files via MCP tool.
@@ -308,48 +409,65 @@ async def get_configs() -> List[str]:
 
 async def get_metrics(
     config: str, version: Optional[str] = None
-) -> tuple[List[str], dict]:
+) -> tuple[List[str], dict[str, Any]]:
     """
     Get list of available metrics for a specific config via MCP tool.
 
     :param config: Config file name (e.g., 'small-scale-udn-l3.yaml')
-    :return: List of metric names
+    :return: Tuple of metrics and metadata map
     """
+    await initialize_global_resources_async()
     logger.info(f"Fetching metrics for config '{config}' from orion-mcp MCP tool")
     meta_map: dict[str, Any] = {}
-    metrics_data: Any = []
     effective_version = version or _DEFAULT_VERSION
+
+    if get_mcp_tool("get_orion_metrics_with_meta") is not None:
+        try:
+            result = await _call_mcp_tool(
+                "get_orion_metrics_with_meta",
+                {"config_name": config, "version": effective_version},
+            )
+            if isinstance(result, dict):
+                meta_map = (
+                    result.get("meta", {})
+                    if isinstance(result.get("meta"), dict)
+                    else {}
+                )
+                metrics = _normalize_metric_names(result.get("metrics", []))
+                if metrics:
+                    return metrics, meta_map
+            else:
+                metrics = _normalize_metric_names(result)
+                if metrics:
+                    return metrics, meta_map
+        except Exception as e:
+            logger.warning(
+                "get_orion_metrics_with_meta unavailable, falling back to get_orion_metrics: %s",
+                e,
+            )
+
+    if get_mcp_tool("get_orion_metrics") is None:
+        return [], meta_map
+
     try:
-        result = await _call_mcp_tool(
-            "get_orion_metrics_with_meta",
-            {"config_name": config, "version": effective_version},
-        )
-    except Exception as e:
-        logger.warning(
-            "get_orion_metrics_with_meta unavailable, falling back to get_orion_metrics: %s",
-            e,
-        )
         result = await _call_mcp_tool(
             "get_orion_metrics",
             {"config_name": config, "version": effective_version},
         )
+    except Exception:
+        return [], meta_map
 
-    if isinstance(result, dict) and "metrics" in result:
-        meta_map = (
-            result.get("meta", {}) if isinstance(result.get("meta"), dict) else {}
-        )
-        metrics_data = result.get("metrics", [])
-    else:
-        metrics_data = result
+    metrics_data: Any = result
+    if isinstance(result, dict):
+        metrics_data = {
+            key: value
+            for key, value in result.items()
+            if key not in {"error", "warning", "meta"}
+        }
 
-    if isinstance(metrics_data, list):
-        return metrics_data, meta_map
-
-    # The metrics tool may return {config_path: [metric1, metric2, ...]}
-    if isinstance(metrics_data, dict):
-        for _config_path, metrics_list in metrics_data.items():
-            if isinstance(metrics_list, list):
-                return metrics_list, meta_map
+    metrics = _normalize_metric_names(metrics_data)
+    if metrics:
+        return metrics, meta_map
 
     return [], meta_map
 
@@ -389,16 +507,26 @@ async def get_performance_data(
             "get_orion_performance_data unavailable, falling back to openshift_report_on: %s",
             e,
         )
-        result = await _call_mcp_tool(
-            "openshift_report_on",
-            {
-                "versions": version,
-                "metric": metric,
-                "config_name": config,
-                "lookback": str(lookback),
-                "options": "json",
-            },
-        )
+        try:
+            result = await _call_mcp_tool(
+                "openshift_report_on",
+                {
+                    "versions": version,
+                    "metric": metric,
+                    "config_name": config,
+                    "lookback": str(lookback),
+                    "options": "json",
+                },
+            )
+        except Exception:
+            return PerformanceData(
+                config=config,
+                metric=metric,
+                version=version,
+                lookback=lookback,
+                values=[],
+                error="performance data unavailable for requested version/metric",
+            )
 
     if isinstance(result, dict) and "values" in result:
         values = result.get("values", [])
@@ -435,6 +563,18 @@ async def get_performance_data(
                     lookback=lookback,
                     values=values,
                 )
+
+    if isinstance(result, dict):
+        error_msg = result.get("error")
+        if isinstance(error_msg, str) and error_msg:
+            return PerformanceData(
+                config=config,
+                metric=metric,
+                version=version,
+                lookback=lookback,
+                values=[],
+                error=error_msg,
+            )
 
     return PerformanceData(
         config=config,
@@ -586,15 +726,16 @@ async def analyze_performance(
             versions = list(_DEFAULT_VERSIONS)
         else:
             versions = requested_versions
-        missing_configs: List[str] = []
         for cfg in configs:
-            metrics, meta_map = await get_metrics(cfg, versions[0])
-            if not metrics:
-                missing_configs.append(cfg)
-                continue
-
-            # Fetch raw data for all metrics and all versions
             for ver in versions:
+                metrics, meta_map = await get_metrics(cfg, ver)
+                if not metrics:
+                    result_parts.append(
+                        f"Could not obtain metric definitions for {cfg} "
+                        f"(version {ver})"
+                    )
+                    continue
+
                 rows: List[dict[str, Any]] = []
                 for metric in metrics:
                     this_period_data = await get_performance_data(
@@ -607,6 +748,12 @@ async def analyze_performance(
                     run_count = len(this_period_values)
 
                     if not this_period_values:
+                        if not _is_no_data_fetch_result(this_period_data):
+                            result_parts.append(
+                                f"Could not fetch current-period performance data for "
+                                f"{cfg} (version {ver}, metric {metric})"
+                            )
+                            continue
                         row = {
                             "config": cfg,
                             "metric": metric,
@@ -629,10 +776,11 @@ async def analyze_performance(
                     two_period_values = two_period_data.values
 
                     this_period_count = len(this_period_values)
+                    previous_period_values = []
                     if len(two_period_values) > this_period_count:
-                        previous_period_values = two_period_values[this_period_count:]
-                    else:
-                        previous_period_values = []
+                        # Orion values are ordered oldest -> newest, so the
+                        # trailing slice overlaps the current lookback window.
+                        previous_period_values = two_period_values[:-this_period_count]
 
                     stats = _calculate_stats(this_period_values)
                     change = _calculate_percentage_change(
@@ -650,45 +798,22 @@ async def analyze_performance(
                     }
                     rows.append(row)
 
-                result_parts.append(
-                    _format_metrics_table(
-                        title=f"*Config: {cfg}*",
-                        version=ver,
-                        rows=sorted(rows, key=_change_sort_key, reverse=True),
-                        total_metrics=len(metrics),
-                        lookback_days=lookback_days,
-                        include_config=False,
-                        note_prefix="showing",
+                if rows:
+                    result_parts.extend(
+                        _split_metrics_table_for_slack(
+                            title=f"*Config: {cfg}*",
+                            version=ver,
+                            rows=sorted(rows, key=_change_sort_key, reverse=True),
+                            total_metrics=len(metrics),
+                            lookback_days=lookback_days,
+                            include_config=False,
+                            note_prefix="showing",
+                        )
                     )
-                )
-
-        if missing_configs:
-            result_parts.append(f"*No metrics found for:* {', '.join(missing_configs)}")
-
-        # Split result_parts into multiple messages to avoid Slack's size limit
-        messages: List[str] = []
-        current_message_parts: List[str] = []
-        current_length = 0
-
-        for part in result_parts:
-            part_length = len(part) + 2  # +2 for "\n\n" separator
-            if (
-                current_length + part_length > _SLACK_MESSAGE_LIMIT
-                and current_message_parts
-            ):
-                # Current message would exceed limit, start a new message
-                messages.append("\n\n".join(current_message_parts))
-                current_message_parts = [part]
-                current_length = len(part)
-            else:
-                current_message_parts.append(part)
-                current_length += part_length
-
-        # Don't forget the last message
-        if current_message_parts:
-            messages.append("\n\n".join(current_message_parts))
-
-        return {"success": True, "messages": messages}
+        return {
+            "success": True,
+            "messages": result_parts,
+        }
     except Exception as e:
         logger.error(f"Error in analyze_performance: {e}", exc_info=True)
         return {"success": False, "message": f"Error: {str(e)}"}
