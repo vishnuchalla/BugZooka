@@ -1,4 +1,5 @@
 import logging
+import re
 
 try:
     import xmltodict  # type: ignore
@@ -75,6 +76,10 @@ def summarize_junit_operator_xml(xml_path):
             # If all found, no need to keep looping
             if test_phase and test_name and failure_message:
                 break
+        if not test_name and failure_message:
+            pod_match = re.search(r'pod\s+"([^"]+)"', failure_message)
+            if pod_match:
+                test_name = pod_match.group(1)
         return test_phase, test_name, failure_message
     except Exception as e:
         logger.error("Error parsing junit_operator.xml file: %s", e)

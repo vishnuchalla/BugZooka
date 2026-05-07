@@ -1,4 +1,5 @@
 FAILURE_KEYWORDS = {
+    "maintenance issue": ("Maintenance", "maintenance issue"),
     "install": ("Install", "installation failure"),
     "provision": ("Provision", "provision failure"),
     "deprovision": ("Deprovision", "deprovision failure"),
@@ -8,5 +9,4 @@ FAILURE_KEYWORDS = {
     "node-readiness": ("Node Readiness", "node-readiness check failure"),
     "openshift-qe": ("Workload", "openshift-qe workload failure"),
     "upgrade": ("Upgrade", "upgrade failure"),
-    "maintenance issue": ("Maintenance", "maintenance issue"),
 }
