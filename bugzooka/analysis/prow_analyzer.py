@@ -86,9 +86,7 @@ def _build_changepoint_preview(json_data, test_label):
             lines.append(f"\n[{test_label}]")
 
         github_ctx = entry.get("github_context") or {}
-        version = github_ctx.get(
-            "current_version", entry.get("ocpVersion", "unknown")
-        )
+        version = github_ctx.get("current_version", entry.get("ocpVersion", "unknown"))
         prs = entry.get("prs", [])
         lines.append(f"  {', '.join(regressed)}")
         lines.append(f"  Changepoint at: {version}")
@@ -138,9 +136,11 @@ def scan_orion_jsons(directory_path):
 
     # Per-step subdirectories: each subdir name matches the viz URL key
     # (both derived from strip_step_prefixes on the GCS folder name).
-    step_subdirs = sorted(
-        [d for d in base_dir.iterdir() if d.is_dir()]
-    ) if base_dir.exists() else []
+    step_subdirs = (
+        sorted([d for d in base_dir.iterdir() if d.is_dir()])
+        if base_dir.exists()
+        else []
+    )
 
     if step_subdirs:
         json_pairs = [
@@ -153,7 +153,9 @@ def scan_orion_jsons(directory_path):
         json_files = list(base_dir.glob("*.json")) if base_dir.exists() else []
         if not json_files:
             root = Path(directory_path)
-            json_files = list(root.glob("junit_*.json")) or list(root.glob("output_*.json"))
+            json_files = list(root.glob("junit_*.json")) or list(
+                root.glob("output_*.json")
+            )
         json_pairs = [(strip_step_prefixes(f.stem), f) for f in json_files]
 
     preview_results, changepoint_tests = _collect_changepoints(json_pairs)
