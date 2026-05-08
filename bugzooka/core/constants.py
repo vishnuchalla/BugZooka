@@ -19,3 +19,4 @@ RAG_TOP_K_DEFAULT = 3
 # AES-256-GCM
 AES_GCM_KEY_LENGTH_BYTES = 32
 AES_GCM_NONCE_LENGTH_BYTES = 12
+GCSWEB_BASE_URL = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/"
