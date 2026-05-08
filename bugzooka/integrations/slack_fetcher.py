@@ -18,6 +18,7 @@ from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
     build_summary_sections,
     construct_visualization_url,
+    construct_all_orion_viz_urls,
 )
 from bugzooka.analysis.prompts import RAG_AWARE_PROMPT
 from bugzooka.integrations.inference_client import (
@@ -451,6 +452,39 @@ class SlackMessageFetcher(SlackClientBase):
         # Check for expected RAG artifacts (JSON index/store files)
         return any(f.name.endswith(".json") for f in os.scandir(rag_dir))
 
+    def _handle_success_viz(self, msg):
+        """Post orion visualization links for a successful job run."""
+        try:
+            text = msg.get("text", "")
+            ts = msg.get("ts")
+
+            view_url, _ = extract_job_details(text)
+            if not view_url:
+                return
+
+            viz_urls = construct_all_orion_viz_urls(view_url)
+            if not viz_urls:
+                return
+
+            header_text = ":chart_with_upwards_trend: *Orion Visualization*\n"
+            for test_name, url in viz_urls.items():
+                header_text += f":white_check_mark: <{url}|{test_name}>\n"
+
+            message_block = self.get_slack_message_blocks(
+                markdown_header=header_text,
+                content_text="",
+                use_markdown=True,
+            )
+            self.client.chat_postMessage(
+                channel=self.channel_id,
+                text="Orion Visualization",
+                blocks=message_block,
+                thread_ts=ts,
+            )
+            self.logger.info("Posted orion viz links for successful job")
+        except Exception as e:
+            self.logger.error("Failed to handle success viz: %s", e)
+
     def _process_message(self, msg, enable_inference):
         """Process a single message through the complete pipeline."""
         user = msg.get("user", "Unknown")
@@ -475,6 +509,11 @@ class SlackMessageFetcher(SlackClientBase):
                 lookback_seconds=lookback,
                 verbose=verbose,
             )
+            return ts
+
+        # Handle success messages: post orion viz links if available
+        if "ended with" in text_lower and "success" in text_lower:
+            self._handle_success_viz(msg)
             return ts
 
         # No weekly trigger; dynamic summarize only
