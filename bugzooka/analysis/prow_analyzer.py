@@ -86,9 +86,7 @@ def _build_changepoint_preview(json_data, test_label):
             lines.append(f"\n[{test_label}]")
 
         github_ctx = entry.get("github_context") or {}
-        version = github_ctx.get(
-            "current_version", entry.get("ocpVersion", "unknown")
-        )
+        version = github_ctx.get("current_version", entry.get("ocpVersion", "unknown"))
         prs = entry.get("prs", [])
         lines.append(f"  {', '.join(regressed)}")
         lines.append(f"  Changepoint at: {version}")
@@ -138,9 +136,11 @@ def scan_orion_jsons(directory_path):
 
     # Per-step subdirectories: each subdir name matches the viz URL key
     # (both derived from strip_step_prefixes on the GCS folder name).
-    step_subdirs = sorted(
-        [d for d in base_dir.iterdir() if d.is_dir()]
-    ) if base_dir.exists() else []
+    step_subdirs = (
+        sorted([d for d in base_dir.iterdir() if d.is_dir()])
+        if base_dir.exists()
+        else []
+    )
 
     if step_subdirs:
         json_pairs = [
@@ -153,7 +153,9 @@ def scan_orion_jsons(directory_path):
         json_files = list(base_dir.glob("*.json")) if base_dir.exists() else []
         if not json_files:
             root = Path(directory_path)
-            json_files = list(root.glob("junit_*.json")) or list(root.glob("output_*.json"))
+            json_files = list(root.glob("junit_*.json")) or list(
+                root.glob("output_*.json")
+            )
         json_pairs = [(strip_step_prefixes(f.stem), f) for f in json_files]
 
     preview_results, changepoint_tests = _collect_changepoints(json_pairs)
@@ -260,18 +262,6 @@ def analyze_prow_artifacts(directory_path, job_name):
             ),
             None,
         )
-        if matched_line is None:
-            matched_line = (
-                "Couldn't identify the failure step, likely a maintanence issue"
-            )
-            return ProwAnalysisResult(
-                errors=[matched_line],
-                categorization_message=MAINTENANCE_ISSUE,
-                requires_llm=False,
-                is_install_issue=True,
-                step_name=None,
-                full_errors_for_file=None,
-            )
     junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
     # Defaults in case XML parsing yields no values
     step_phase, step_name, step_summary = None, None, ""
@@ -293,10 +283,35 @@ def analyze_prow_artifacts(directory_path, job_name):
                 step_name, step_phase, job_name
             )
         else:
-            categorization_message = categorize_prow_failure(
-                matched_line, "unknown", job_name
-            )
+            if matched_line is not None:
+                categorization_message = categorize_prow_failure(
+                    matched_line, "unknown", job_name
+                )
+            else:
+                categorization_message = MAINTENANCE_ISSUE
             step_summary = ""
+    if matched_line is None:
+        if step_name and step_phase:
+            return ProwAnalysisResult(
+                errors=[step_summary] if step_summary else [],
+                categorization_message=(
+                    f"Maintenance Issue: {step_name} failed in" f" {step_phase} phase"
+                ),
+                requires_llm=False,
+                is_install_issue=True,
+                step_name=step_name,
+                full_errors_for_file=None,
+            )
+        return ProwAnalysisResult(
+            errors=[
+                "Couldn't identify the failure step," " likely a maintenance issue"
+            ],
+            categorization_message=MAINTENANCE_ISSUE,
+            requires_llm=False,
+            is_install_issue=True,
+            step_name=None,
+            full_errors_for_file=None,
+        )
     cluster_operators_file_path = os.path.join(directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
         with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
