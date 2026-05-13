@@ -173,22 +173,63 @@ class TestSlackFetcher:
 
         verify_slack_messages(posted_messages, inference_available=False)
 
-    def test_success_processing(
+    def test_success_processing_with_viz(
         self,
         mock_slack_post_message,
         mock_slack_file_upload,
         mock_slack_conversations_history,
     ):
-        """Test processing success messages, should not post anything to Slack."""
+        """Test processing success messages posts orion viz links when available."""
         test_messages = create_test_messages(include_error=False, include_success=True)
 
-        posted_messages = run_slack_fetcher_test(
-            test_messages=test_messages,
-            enable_inference=False,
-            mock_slack_post_message=mock_slack_post_message,
-            mock_slack_file_upload=mock_slack_file_upload,
-            mock_slack_conversations_history=mock_slack_conversations_history,
-        )
+        mock_viz_urls = {
+            "cluster-density": "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/artifacts/viz.html",
+            "node-density": "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/artifacts/viz2.html",
+        }
+
+        with patch(
+            "bugzooka.integrations.slack_fetcher.construct_all_orion_viz_urls",
+            return_value=mock_viz_urls,
+        ):
+            posted_messages = run_slack_fetcher_test(
+                test_messages=test_messages,
+                enable_inference=False,
+                mock_slack_post_message=mock_slack_post_message,
+                mock_slack_file_upload=mock_slack_file_upload,
+                mock_slack_conversations_history=mock_slack_conversations_history,
+            )
+
+        assert (
+            len(posted_messages) == 1
+        ), f"Expected 1 posted message (viz links), got {len(posted_messages)}"
+
+        viz_message = posted_messages[0]
+        blocks = viz_message.get("blocks", [])
+        header_text = blocks[0].get("text", {}).get("text", "")
+        assert "Orion Visualization" in header_text
+        assert "cluster-density" in header_text
+        assert "node-density" in header_text
+
+    def test_success_processing_no_viz(
+        self,
+        mock_slack_post_message,
+        mock_slack_file_upload,
+        mock_slack_conversations_history,
+    ):
+        """Test processing success messages posts nothing when no orion artifacts exist."""
+        test_messages = create_test_messages(include_error=False, include_success=True)
+
+        with patch(
+            "bugzooka.integrations.slack_fetcher.construct_all_orion_viz_urls",
+            return_value=None,
+        ):
+            posted_messages = run_slack_fetcher_test(
+                test_messages=test_messages,
+                enable_inference=False,
+                mock_slack_post_message=mock_slack_post_message,
+                mock_slack_file_upload=mock_slack_file_upload,
+                mock_slack_conversations_history=mock_slack_conversations_history,
+            )
 
         assert (
             len(posted_messages) == 0

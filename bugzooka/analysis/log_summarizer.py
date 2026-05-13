@@ -218,15 +218,17 @@ def construct_visualization_url(view_url, step_name):
     :return: str, dict[str, str], or None
     """
     if step_name and "orion-report" in step_name:
-        return _construct_deferred_viz_urls(view_url)
+        return construct_all_orion_viz_urls(view_url)
     return _construct_single_viz_url(view_url, step_name)
 
 
-def _construct_deferred_viz_urls(view_url):
+def construct_all_orion_viz_urls(view_url):
     """
-    For the deferred orion-report step, find viz HTML files in each
-    individual orion step's artifacts directory and return a dict of
-    {test_name: url}.
+    Find viz HTML files in each individual orion step's artifacts directory
+    and return a dict of {test_name: url}.
+
+    :param view_url: prow view URL
+    :return: dict[str, str] mapping test names to viz URLs, or None
     """
     try:
         gcs_path = extract_gcs_path(view_url)
